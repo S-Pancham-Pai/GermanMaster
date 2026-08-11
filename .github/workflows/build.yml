@@ -14,7 +14,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
       - name: Generate Wrapper & Build Debug APK
         run: |
-          gradle wrapper
+          gradle wrapper --gradle-version 8.5
           chmod +x gradlew
           ./gradlew assembleDebug
       - name: Upload APK
