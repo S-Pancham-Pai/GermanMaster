@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GermanMaster M3</string>
+    <string name="tab_roadmap">Roadmap</string>
+    <string name="tab_explorer">Word Explorer</string>
+    <string name="tab_practice">SRS Practice</string>
+    <string name="tab_settings">Settings</string>
+</resources>
