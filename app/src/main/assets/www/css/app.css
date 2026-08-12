@@ -568,3 +568,70 @@ body {
 .story-card.locked { opacity: .55; cursor: default; }
 .story-arrow { color: var(--ink-3); display: flex; align-items: center; }
 .story-arrow svg { width: 20px; height: 20px; }
+
+/* ============ professional refresh — crisper surfaces, calmer color ============ */
+:root {
+  --card: #ffffff;
+  --line: #e9e4f1;
+  --ink-2: #544b66;
+  --violet-deep: #5638a8;
+  --shadow-sm: 0 1px 2px rgba(24, 18, 41, 0.05), 0 2px 8px rgba(24, 18, 41, 0.04);
+  --shadow-md: 0 2px 6px rgba(24, 18, 41, 0.06), 0 14px 34px rgba(24, 18, 41, 0.1);
+}
+body { background: #f6f4fa; background-image: linear-gradient(180deg, #efe9f8 0px, #f6f4fa 340px); }
+.orb { opacity: 0.13; filter: blur(56px); }
+:is(button, [data-act], input, textarea, select):focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+button { -webkit-tap-highlight-color: transparent; }
+
+.progress-chip { background: #fff; border: 1px solid var(--line); box-shadow: var(--shadow-sm); backdrop-filter: none; }
+.progress-track { background: #efecf6; }
+
+.today-card, .level, .qcard, .rev-card, .drill-card, .story-card, .set-card, .sq, .miss-list {
+  background: #fff; border: 1px solid var(--line); box-shadow: var(--shadow-sm); backdrop-filter: none;
+}
+.today-card { border-radius: 20px; }
+.level { border-radius: 18px; }
+.unit { background: #fbfaff; }
+.stage-row { box-shadow: none; }
+.stage-row:active, .drill-card:active, .story-card:active { transform: scale(0.995); }
+.typebox { font-size: 20px; color: #241d33; }
+
+/* explore */
+.pane { background: #fff; border: 1.5px solid var(--line); border-radius: 18px; box-shadow: var(--shadow-sm); padding: 12px 14px 10px; transition: border-color .18s ease, box-shadow .18s ease; }
+.pane:focus-within { border-color: #b6a2e6; box-shadow: 0 0 0 3px rgba(103, 80, 164, 0.13), var(--shadow-sm); }
+.pane textarea { font-size: 20px; letter-spacing: 0; }
+.pane.de textarea { color: #2f2370; }
+.lang { color: var(--ink-2); }
+.ico { border-radius: 12px; color: var(--violet-deep); }
+.ico.go { width: 46px; border-radius: 14px; background: linear-gradient(180deg, #7055c2, #5638a8); box-shadow: 0 4px 14px rgba(86, 56, 168, 0.35); }
+.ico.go:active { transform: translateY(1px); }
+.exp-status { font-size: 12.5px; color: var(--ink-2); letter-spacing: 0.01em; }
+.sug-chip { background: #fff; border: 1px solid var(--line); color: var(--violet-deep); box-shadow: var(--shadow-sm); }
+.sug-label { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+
+/* example sheet */
+.sentence-sheet { border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow-md); }
+.sentence-sheet h3 { display: flex; align-items: center; gap: 8px; }
+.sheet-count { background: var(--violet-soft); color: var(--violet-deep); border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 800; }
+.sheet-tools { display: flex; gap: 2px; }
+.ico.fresh { color: #7a4dbb; background: #f3ecfd; border-radius: 12px; }
+.ico.fresh.spin svg, .ghost.spin svg { animation: spin 0.9s linear infinite; }
+.sentence-de { color: #2d2066; font-size: 19px; }
+.ghost { background: #f5f2fa; border: 1px solid var(--line); }
+.sheet-via { font-size: 11.5px; }
+.float-quote { background: #fff; border: 1px solid var(--line); box-shadow: var(--shadow-md); backdrop-filter: none; color: var(--violet-deep); }
+
+/* dock — solid material-3 tonal indicator */
+.dock { background: #fff; border: 1px solid var(--line); box-shadow: 0 18px 40px rgba(24, 17, 44, 0.16), 0 1px 3px rgba(24, 17, 44, 0.08); backdrop-filter: none; }
+.dock-btn { color: #7b7488; }
+.dock-glow { background: var(--violet-soft); box-shadow: none; }
+.dock-btn.active { color: var(--violet-deep); }
+
+/* buttons */
+.primary { background: linear-gradient(180deg, #6b52bd, #5638a8); box-shadow: 0 10px 24px rgba(86, 56, 168, 0.28); }
+.primary:active { transform: translateY(1px); }
+.type-input:focus { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(103, 80, 164, 0.12); }
+
+/* settings rows */
+.set-card { border-radius: 18px; }
+.you-level { border-radius: 16px; }

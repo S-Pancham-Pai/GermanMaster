@@ -154,11 +154,27 @@ const Translate = (() => {
     } finally { clearTimeout(t); }
   }
 
+  /* Tatoeba & the AI writer don't always send CORS headers, which silently
+     kills them on phones. Try direct first, then public CORS relays. */
+  const RELAYS = [
+    u => u,
+    u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
+    u => "https://corsproxy.io/?url=" + encodeURIComponent(u)
+  ];
+  async function fetchRelay(url, ms, wantJson) {
+    let err = null;
+    for (const wrap of RELAYS) {
+      try { return wantJson ? await fetchJSON(wrap(url), ms) : await fetchText(wrap(url), ms); }
+      catch (e) { err = e; }
+    }
+    throw err || new Error("unreachable");
+  }
+
   /* Google Translate's own endpoint — the same engine Google Search uses.
      Returns { text, alts[] } — alts are the other dictionary translations. */
   async function googleTranslate(q, fromDe) {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${fromDe ? "de" : "en"}&tl=${fromDe ? "en" : "de"}&dt=t&dt=bd&q=${encodeURIComponent(q)}`;
-    const json = await fetchJSON(url, 6000);
+    const json = await fetchRelay(url, 6000, true);
     const parts = json && Array.isArray(json[0]) ? json[0].map(seg => seg && seg[0]).filter(Boolean) : [];
     const text = String(parts.join(" ")).replace(/\s+/g, " ").trim();
     if (!text || normalize(text) === normalize(q)) throw new Error("gtx-echo");
@@ -177,14 +193,18 @@ const Translate = (() => {
   }
 
   /* AI-written practice sentences (like Google's AI mode, tuned for A1/A2 German).
-     GET first; if the network/CORS blocks it, try the POST chat shape. */
+     A random topic + batch salt makes every call produce NEW sentences. */
+  const AI_TOPICS = ["meeting friends after work", "ordering at a café", "a weekend trip", "a normal day at work or school", "learning a new skill", "cooking dinner for someone", "texting a friend", "shopping in the city", "a family get-together", "a lazy Sunday morning", "planning a small party", "getting around town", "bad weather ruining plans", "sports and hobbies", "a funny misunderstanding", "movie night", "moving to a new flat", "a visit to the doctor", "trains and delays", "a summer evening outside"];
   async function aiExamples(deTerm, enHint) {
     const w = stripArticle(deTerm || "").trim();
     if (!w || w.length > 32) return [];
-    const prompt = `Write 3 different short, natural German sentences (CEFR A1-A2, everyday conversational style, one sentence could be a question) using the German word "${w}"${enHint ? ` (it means: "${String(enHint).slice(0, 40)}")` : ""}. Each sentence must actually contain the word "${w}". Add an English translation for each. Reply with ONLY the lines, exactly in this format, nothing else:\nGerman sentence => English translation`;
+    const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+    const topics = `${rnd(AI_TOPICS)} or ${rnd(AI_TOPICS)}`;
+    const batch = Math.random().toString(36).slice(2, 8);
+    const prompt = `Write 4 different short, natural German sentences (CEFR A1-A2, everyday conversational style, one could be a question) using the German word "${w}"${enHint ? ` (it means: "${String(enHint).slice(0, 40)}")` : ""}. Set each sentence in a scene about: ${topics}. Each sentence must actually contain the word "${w}". Add an English translation for each. Reply with ONLY the lines, exactly in this format, nothing else:\nGerman sentence => English translation\n\n(batch ${batch})`;
     let txt = "";
     try {
-      txt = await fetchText("https://text.pollinations.ai/" + encodeURIComponent(prompt), 9000);
+      txt = await fetchRelay("https://text.pollinations.ai/" + encodeURIComponent(prompt), 9500);
     } catch (_) {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 9000);
@@ -210,14 +230,14 @@ const Translate = (() => {
       if (de.length < 8 || de.length > 130 || !rx.test(de)) continue;
       if (!en || en.length > 140) continue;
       out.push({ de, en, src: "ai" });
-      if (out.length >= 3) break;
+      if (out.length >= 4) break;
     }
     return out;
   }
 
   async function myMemoryTranslate(q, fromDe) {
     const pair = fromDe ? "de|en" : "en|de";
-    const json = await fetchJSON(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=${pair}`);
+    const json = await fetchRelay(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=${pair}`, 7000, true);
     const translated = String((json && json.responseData && json.responseData.translatedText) || "").trim();
     if (!translated || /^[A-Z ]*(QUERY LENGTH|INVALID|MYMEMORY)/i.test(translated)) throw new Error("quota");
     // MyMemory echoes untranslatable input back — treat an echo as a miss
@@ -237,7 +257,7 @@ const Translate = (() => {
   async function tatoebaExamples(deWord) {
     const term = stripArticle(deWord);
     const url = `https://tatoeba.org/en/api_v1/search?from=deu&to=eng&orphans=no&sort=relevance&word_count_max=14&query=${encodeURIComponent("=" + term)}`;
-    const json = await fetchJSON(url, 8000);
+    const json = await fetchRelay(url, 8000, true);
     const out = [];
     const rx = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
     for (const r of (json.results || [])) {
@@ -279,7 +299,14 @@ const Translate = (() => {
     if (!q) return null;
     const fromDe = detectGerman(q);
     const key = (fromDe ? "de:" : "en:") + q.toLowerCase();
-    if (cache[key]) return { ...cache[key], cached: true };
+    if (cache[key]) {
+      const hit = { ...cache[key], cached: true };
+      // memory answers stay instant — but AI sentences are never frozen; refresh them online
+      if (navigator.onLine && Store.get().settings.onlineDict) {
+        try { return await freshExamples(hit); } catch (_) { /* keep the memory answer */ }
+      }
+      return hit;
+    }
     if (!navigator.onLine || !Store.get().settings.onlineDict) {
       const local = lookupLocal(q);
       if (local) {
@@ -334,12 +361,22 @@ const Translate = (() => {
     }
     if (mmR.status === "fulfilled") examples.push(...mmR.value.examples.map(x => ({ ...x, src: "mm" })));
 
-    // 2) sentences need the GERMAN term — search corpora + AI writer in parallel
+    // adopt article/lemma from the pocket dictionary when the live translation
+    // is a bare noun — "rat" should answer "die Ratte", not just "Ratte"
+    if (!local && translated && !gender) {
+      const enr = lookupDict(fromDe ? q : translated);
+      if (enr && enr.gender) {
+        gender = enr.gender;
+        if (!fromDe && stripArticle(enr.de).toLowerCase() === stripArticle(translated).toLowerCase()) de = enr.de;
+      }
+    }
+
+    // 2) sentences need the GERMAN term — corpus + AI writer in parallel.
+    //    The AI writer ALWAYS runs online: its whole job is fresh sentences.
     const term = stripArticle(fromDe ? q : (de || q));
-    const needAi = examples.length < 3; // keep the sheet stocked even when the corpus is thin
     const [tatoR, aiR] = await Promise.allSettled([
       tatoebaExamples(term),
-      needAi ? aiExamples(term, en || q) : Promise.resolve([])
+      aiExamples(term, en || q)
     ]);
     if (tatoR.status === "fulfilled") srcs.tatoeba = tatoR.value.length > 0;
     if (tatoR.status === "fulfilled" && tatoR.value.length) {
@@ -358,22 +395,48 @@ const Translate = (() => {
       examples = [...course, ...tato, ...ai, ...rest];
     }
 
-    const res = finish(q, fromDe, de, en, gender, examples, via, false, key);
-    res.alts = alts;
-    res.sources = srcs;
-    return res;
+    return finish(q, fromDe, de, en, gender, examples, via, false, key, { alts, sources: srcs });
   }
 
-  function finish(query, fromDe, de, en, gender, examples, via, offline, cacheKey) {
+  /* Regenerate only the AI-written sentences of an earlier answer —
+     the translation and corpus examples stay put. */
+  async function freshExamples(res) {
+    if (!res || res.offline || !navigator.onLine || !Store.get().settings.onlineDict) return res;
+    const term = stripArticle(res.fromDe ? res.query : (res.de || res.query));
+    let ai = [];
+    try { ai = await aiExamples(term, res.en || res.query); } catch (_) { ai = []; }
+    if (!ai.length) return res;
+    const keep = (res.examples || []).filter(x => x.src !== "ai");
+    const first = keep.filter(x => x.src === "course" || x.src === "dict");
+    const rest = keep.filter(x => x.src !== "course" && x.src !== "dict");
+    const fresh = ai.filter(a => !keep.some(k => k.de === a.de));
+    if (!fresh.length) return res;
+    return {
+      ...res,
+      examples: [...first.slice(0, 4), ...fresh, ...rest].slice(0, 10),
+      sources: { ...(res.sources || {}), ai: true },
+      idx: 0, fresh: true
+    };
+  }
+
+  function finish(query, fromDe, de, en, gender, examples, via, offline, cacheKey, extras) {
     // dedupe + prefer containing the queried term
     const term = stripArticle(fromDe ? query : de).toLowerCase();
     const seen = new Set();
     examples = examples.filter(x => x.de && !seen.has(x.de) && seen.add(x.de));
     examples.sort((a, b) => (b.de.toLowerCase().includes(term) - a.de.toLowerCase().includes(term)));
     const res = { query, fromDe, de, en, gender, examples: examples.slice(0, 10), via, offline: !!offline, idx: 0 };
-    if (cacheKey) { cache[cacheKey] = res; saveCache(); }
+    if (extras) {
+      if (extras.alts && extras.alts.length) res.alts = extras.alts;
+      if (extras.sources) res.sources = extras.sources;
+    }
+    if (cacheKey) {
+      // AI sentences must stay fresh — never freeze them into the cache
+      cache[cacheKey] = { ...res, examples: res.examples.filter(x => x.src !== "ai") };
+      saveCache();
+    }
     return res;
   }
 
-  return { lookup, detectGerman };
+  return { lookup, detectGerman, freshExamples };
 })();

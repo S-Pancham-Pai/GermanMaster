@@ -353,18 +353,34 @@ const Views = {
       <div class="exp-status" id="expStatus">${E.status ? esc(E.status) : ""}</div>
       <div class="sug-row ${E.sugs && E.sugs.length ? "show" : ""}" id="sugRow">${E.sugs && E.sugs.length ? `<span class="sug-label">Did you mean:</span>` + E.sugs.slice(0, 4).map(it => `<button class="sug-chip" data-act="sug" data-de="${escAttr(it.de)}">${esc(it.de)}<span>${esc(it.en)}</span></button>`).join("") : ""}</div>
       <div class="sug-row ${E.alts && E.alts.length ? "show" : ""}" id="altRow">${E.alts && E.alts.length ? `<span class="sug-label">also:</span>` + E.alts.slice(0, 3).map(a => `<button class="sug-chip alt" data-act="alt" data-v="${escAttr(a)}">${esc(a)}</button>`).join("") : ""}</div>
-      <div class="sentence-sheet ${E.showSentence && E.result && E.result.examples.length ? "show" : ""}" id="sheet">
-        ${E.result ? `
+      <div class="sentence-sheet ${E.showSentence && E.result ? "show" : ""}" id="sheet">
+        ${E.result ? (() => {
+          const r = E.result;
+          const online = navigator.onLine && !r.offline;
+          const labels = { course: "from your course", dict: "from the pocket dictionary", tatoeba: "real sentence · Tatoeba", ai: "✨ AI-written · fresh for you", mm: "from real translated texts" };
+          if (!r.examples || !r.examples.length) return `
           <div class="sheet-top">
-            <h3>In a real sentence</h3>
-            <button class="ico" data-act="nextEx" aria-label="Another example">${icon("shuffle")}</button>
+            <h3>Example sentences</h3>
+            ${online ? `<button class="ico fresh" data-act="freshEx" aria-label="Write fresh examples with AI">${icon("sparkle")}</button>` : ""}
           </div>
-          <div class="sentence-de">${esc(E.result.examples[E.exIdx] ? E.result.examples[E.exIdx].de : "—")}</div>
-          <div class="sentence-en">${esc(E.result.examples[E.exIdx] ? E.result.examples[E.exIdx].en : "")}</div>
+          <div class="sentence-en">No stored sentence for “${esc(r.query)}” yet${online ? " — tap the ✨ above and the AI writes new ones just for you" : " — the course examples grow as you pass stages"}.</div>`;
+          const total = r.examples.length;
+          const cur = E.exIdx % total;
+          const ex = r.examples[cur];
+          return `
+          <div class="sheet-top">
+            <h3>Example sentences <span class="sheet-count">${cur + 1}/${total}</span></h3>
+            <span class="sheet-tools">
+              <button class="ico" data-act="nextEx" aria-label="Next example">${icon("next")}</button>
+              ${online ? `<button class="ico fresh" data-act="freshEx" aria-label="Fresh examples written by AI">${icon("sparkle")}</button>` : ""}
+            </span>
+          </div>
+          <div class="sentence-de">${esc(ex.de)}</div>
+          <div class="sentence-en">${esc(ex.en)}</div>
           <div class="sheet-foot">
             <button class="ghost" data-act="spkEx">${icon("speaker")} Listen</button>
-            <span class="sheet-via">${(() => { const x = E.result.examples[E.exIdx] || {}; const L = { course: "from your course", dict: "from the pocket dictionary", tatoeba: "real sentence · Tatoeba", ai: "written by AI — practice example", mm: "from real translated texts" }; return L[x.src] || (E.result.via === "course" ? "from your course" : E.result.via === "dict" ? "pocket dictionary" : "from the web"); })()}</span>
-          </div>` : ""}
+            <span class="sheet-via">${labels[ex.src] || (r.via === "course" ? "from your course" : r.via === "dict" ? "pocket dictionary" : "from the web")}</span>
+          </div>`;})() : ""}
       </div>`;
   },
 
@@ -474,7 +490,7 @@ const Views = {
             <div class="set-copy"><b>Unlock score</b><span>Pass mark for stages</span></div>
             <select class="selset" data-act="passScore">${[70, 80, 90].map(v => `<option value="${v}" ${S.settings.passScore === v ? "selected" : ""}>${v}%</option>`).join("")}</select></div>
           <div class="set-row"><div class="set-ico" style="background:#e8f8ee;color:#1c8a4d">${icon("translate")}</div>
-            <div class="set-copy"><b>Online dictionary</b><span>Live translation + real example sentences</span></div>
+            <div class="set-copy"><b>Online dictionary</b><span>Google Translate + AI-written examples, fresh every time</span></div>
             <button class="toggle ${S.settings.onlineDict ? "on" : ""}" data-act="tog" data-key="onlineDict"><i></i></button></div>
         </div>
       </div>

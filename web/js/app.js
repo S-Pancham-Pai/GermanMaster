@@ -187,10 +187,18 @@ const App = {
       } else this.exp.status = "";
       if (r.examples && r.examples.length) {
         $("#quoteBtn").classList.add("show");
-        this.exp.status += " · tap 💬 for a real example sentence";
+        const hasAi = r.examples.some(x => x.src === "ai");
+        this.exp.status += hasAi
+          ? " · 💬 examples ready — tap ✨ for fresh AI sentences"
+          : navigator.onLine && !r.offline
+            ? " · tap 💬 for examples — ✨ writes new ones"
+            : " · tap 💬 for a real example sentence";
       } else {
-        $("#quoteBtn").classList.remove("show");
-        this.exp.status += " · no example sentence found for this one — the translation is still solid";
+        // keep 💬 visible even with zero examples so the AI generator stays reachable
+        $("#quoteBtn").classList.add("show");
+        this.exp.status += navigator.onLine && !r.offline
+          ? " · tap 💬, then ✨ — AI writes fresh examples for this word"
+          : " · no example sentence found for this one — the translation is still solid";
       }
     }
     if (st) st.textContent = this.exp.status;
@@ -225,27 +233,36 @@ const App = {
     const sheet = $("#sheet");
     if (!sheet) return;
     if (!r) { sheet.classList.remove("show"); sheet.innerHTML = ""; return; }
+    const online = navigator.onLine && !r.offline;
     if (!r.examples || !r.examples.length) {
       if (this.exp.showSentence) {
         sheet.innerHTML = `
-          <div class="sheet-top"><h3>In a real sentence</h3></div>
-          <div class="sentence-en">No real-life sentence found for “${esc(r.query)}” yet — the course examples grow as you pass stages.</div>
+          <div class="sheet-top">
+            <h3>Example sentences</h3>
+            ${online ? `<button class="ico fresh" data-act="freshEx" aria-label="Write fresh examples with AI">${icon("sparkle")}</button>` : ""}
+          </div>
+          <div class="sentence-en">No stored sentence for “${esc(r.query)}” yet${online ? " — tap the ✨ above and the AI writes new ones just for you" : " — the course examples grow as you pass stages"}.</div>
           ${r.sources ? `<div class="sheet-via">sources online: Google ${r.sources.google ? "✓" : "✗"} · Tatoeba ${r.sources.tatoeba ? "✓" : "✗"} · AI writer ${r.sources.ai ? "✓" : "✗"} · texts ${r.sources.mm ? "✓" : "✗"}</div>` : ""}`;
         sheet.classList.add("show");
       } else { sheet.classList.remove("show"); sheet.innerHTML = ""; }
       return;
     }
-    const ex = r.examples[this.exp.exIdx % r.examples.length];
+    const total = r.examples.length;
+    const cur = this.exp.exIdx % total;
+    const ex = r.examples[cur];
     sheet.innerHTML = `
       <div class="sheet-top">
-        <h3>In a real sentence</h3>
-        <button class="ico" data-act="nextEx" aria-label="Another example">${icon("shuffle")}</button>
+        <h3>Example sentences <span class="sheet-count">${cur + 1}/${total}</span></h3>
+        <span class="sheet-tools">
+          <button class="ico" data-act="nextEx" aria-label="Next example">${icon("next")}</button>
+          ${online ? `<button class="ico fresh" data-act="freshEx" aria-label="Fresh examples written by AI">${icon("sparkle")}</button>` : ""}
+        </span>
       </div>
       <div class="sentence-de">${esc(ex.de)}</div>
       <div class="sentence-en">${esc(ex.en)}</div>
       <div class="sheet-foot">
         <button class="ghost" data-act="spkEx">${icon("speaker")} Listen</button>
-        <span class="sheet-via">${({ course: "from your course", dict: "from the pocket dictionary", tatoeba: "real sentence · Tatoeba", ai: "written by AI — practice example", mm: "from real translated texts" })[ex.src] || (r.via === "course" ? "from your course" : r.via === "dict" ? "pocket dictionary" : "from the web")}</span>
+        <span class="sheet-via">${({ course: "from your course", dict: "from the pocket dictionary", tatoeba: "real sentence · Tatoeba", ai: "✨ AI-written · fresh for you", mm: "from real translated texts" })[ex.src] || (r.via === "course" ? "from your course" : r.via === "dict" ? "pocket dictionary" : "from the web")}</span>
       </div>`;
     if (this.exp.showSentence) sheet.classList.add("show");
   },
@@ -465,6 +482,27 @@ const App = {
           this.exp.exIdx = (this.exp.exIdx + 1) % r.examples.length;
           this.renderSheet();
         }
+        break;
+      }
+      case "freshEx": {
+        const r = this.exp.result;
+        if (!r || !navigator.onLine || r.offline) break;
+        const st = $("#expStatus");
+        if (t && t.classList) t.classList.add("spin");
+        if (st) st.textContent = "✨ AI is writing fresh examples for “" + r.query + "”…";
+        Translate.freshExamples(r).then(nr => {
+          this.exp.result = nr;
+          this.exp.exIdx = 0;
+          this.exp.showSentence = true;
+          const got = nr.examples.filter(x => x.src === "ai").length;
+          this.exp.status = got
+            ? `✨ ${got} fresh AI example${got === 1 ? "" : "s"} — every tap writes new ones`
+            : "AI writer is unreachable right now — kept the existing examples.";
+          if (st) st.textContent = this.exp.status;
+          this.renderSheet();
+          const sheet = $("#sheet");
+          if (sheet) sheet.classList.add("show");
+        });
         break;
       }
       case "spkEx": {

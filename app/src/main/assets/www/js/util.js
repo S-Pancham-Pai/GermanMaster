@@ -82,7 +82,8 @@ function icon(name) {
     pen: `<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M13.5 7.5l3 3"/>`,
     chat: `<path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8l-4 4z"/>`,
     grad: `<path d="M12 4 2.5 8.5 12 13l9.5-4.5z"/><path d="M6.5 10.5V16c0 1.5 2.5 3 5.5 3s5.5-1.5 5.5-3v-5.5"/>`,
-    heart: `<path d="M12 20s-7.5-4.6-7.5-9.5A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 3.5C19.5 15.4 12 20 12 20z"/>`
+    heart: `<path d="M12 20s-7.5-4.6-7.5-9.5A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 3.5C19.5 15.4 12 20 12 20z"/>`,
+    sparkle: `<path d="M12 3.5l1.9 5.1L19 10.5l-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M18.8 15.2l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8z"/>`
   };
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${P[name] || P.star}</svg>`;
 }
