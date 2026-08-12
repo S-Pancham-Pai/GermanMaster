@@ -227,7 +227,7 @@ const App = {
       <div class="sentence-en">${esc(ex.en)}</div>
       <div class="sheet-foot">
         <button class="ghost" data-act="spkEx">${icon("speaker")} Listen</button>
-        <span class="sheet-via">${r.via === "course" ? "from your course" : "from Tatoeba — real sentences"}</span>
+        <span class="sheet-via">${({ course: "from your course", tatoeba: "real sentence · Tatoeba", ai: "written by AI — practice example", mm: "from real translated texts" })[ex.src] || (r.via === "course" ? "from your course" : "from the web")}</span>
       </div>`;
     if (this.exp.showSentence) sheet.classList.add("show");
   },

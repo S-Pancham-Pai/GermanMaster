@@ -86,6 +86,47 @@ const Translate = (() => {
     } finally { clearTimeout(t); }
   }
 
+  async function fetchText(url, ms = 8000) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), ms);
+    try {
+      const res = await fetch(url, { signal: ctrl.signal });
+      if (!res.ok) throw new Error("http " + res.status);
+      return await res.text();
+    } finally { clearTimeout(t); }
+  }
+
+  /* Google Translate's own endpoint — the same engine Google Search uses */
+  async function googleTranslate(q, fromDe) {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${fromDe ? "de" : "en"}&tl=${fromDe ? "en" : "de"}&dt=t&q=${encodeURIComponent(q)}`;
+    const json = await fetchJSON(url, 6000);
+    const parts = json && Array.isArray(json[0]) ? json[0].map(seg => seg && seg[0]).filter(Boolean) : [];
+    const out = String(parts.join(" ")).replace(/\s+/g, " ").trim();
+    if (!out || normalize(out) === normalize(q)) throw new Error("gtx-echo");
+    return out;
+  }
+
+  /* AI-written practice sentences (like Google's AI mode, but tuned for A1/A2 German) */
+  async function aiExamples(deTerm, enHint) {
+    const w = stripArticle(deTerm || "").trim();
+    if (!w || w.length > 32) return [];
+    const prompt = `Write 3 different short, natural German sentences (CEFR A1-A2, everyday conversational style, one sentence could be a question) using the German word "${w}"${enHint ? ` (it means: "${String(enHint).slice(0, 40)}")` : ""}. Each sentence must actually contain the word "${w}". Add an English translation for each. Reply with ONLY the lines, exactly in this format, nothing else:\nGerman sentence => English translation`;
+    const txt = await fetchText("https://text.pollinations.ai/" + encodeURIComponent(prompt), 9000);
+    const out = [];
+    const rx = new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    for (const line of String(txt).split(/\n+/)) {
+      const parts = line.split("=>");
+      if (parts.length !== 2) continue;
+      const de = parts[0].trim().replace(/^[\d]+[.)]\s*/, "").replace(/^[-*•]\s*/, "").replace(/^["„“]+|["“”]+$/g, "");
+      const en = parts[1].trim().replace(/^["“”]+|["“”]+$/g, "");
+      if (de.length < 8 || de.length > 130 || !rx.test(de)) continue;
+      if (!en || en.length > 140) continue;
+      out.push({ de, en, src: "ai" });
+      if (out.length >= 3) break;
+    }
+    return out;
+  }
+
   async function myMemoryTranslate(q, fromDe) {
     const pair = fromDe ? "de|en" : "en|de";
     const json = await fetchJSON(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=${pair}`);
@@ -137,7 +178,7 @@ const Translate = (() => {
         const q = String(text || "").trim().replace(/\s+/g, " ");
         const local = q ? lookupLocal(q) : null;
         if (local) return finish(q, detectGerman(q), local.de, local.en, local.gender,
-          local.exampleDe ? [{ de: local.exampleDe, en: local.exampleEn }] : [], "course", true);
+          local.exampleDe ? [{ de: local.exampleDe, en: local.exampleEn, src: "course" }] : [], "course", true);
         const fromDe = q ? detectGerman(q) : false;
         return { query: q, fromDe, de: fromDe ? q : "", en: fromDe ? "" : q, gender: null,
           examples: [], via: "error", offline: true, idx: 0, suggestions: q ? suggestions(q) : [] };
@@ -155,7 +196,7 @@ const Translate = (() => {
       const local = lookupLocal(q);
       if (local) {
         return finish(q, fromDe, local.de, local.en, local.gender,
-          local.exampleDe ? [{ de: local.exampleDe, en: local.exampleEn }] : [], "course", true);
+          local.exampleDe ? [{ de: local.exampleDe, en: local.exampleEn, src: "course" }] : [], "course", true);
       }
       return {
         query: q, fromDe, de: fromDe ? q : "", en: fromDe ? "" : q,
@@ -171,23 +212,43 @@ const Translate = (() => {
     let via = "live";
 
     if (local) { de = local.de; en = local.en; via = "course"; }
-    try {
-      const mm = await myMemoryTranslate(q, fromDe);
-      if (local && (fromDe || !local)) { /* translation already known locally; still harvest examples */ }
-      if (!local) { de = fromDe ? q : stripArticle(mm.translated); en = fromDe ? mm.translated : q; }
-      examples = mm.examples;
-    } catch (e) {
-      if (!local) {
+    if (local && local.exampleDe) examples.push({ de: local.exampleDe, en: local.exampleEn, src: "course" });
+
+    // 1) translation: Google Translate + MyMemory race in parallel — first good one wins
+    const [gtR, mmR] = await Promise.allSettled([googleTranslate(q, fromDe), myMemoryTranslate(q, fromDe)]);
+    let translated = "";
+    if (gtR.status === "fulfilled") translated = gtR.value;
+    else if (mmR.status === "fulfilled") translated = mmR.value.translated;
+    if (!local) {
+      if (translated) { de = fromDe ? q : translated; en = fromDe ? translated : q; }
+      else {
         return { query: q, fromDe, de: fromDe ? q : "", en: fromDe ? "" : q, gender: null,
           examples: [], via: "error", idx: 0, suggestions: suggestions(q) };
       }
     }
-    if (local && local.exampleDe) examples.unshift({ de: local.exampleDe, en: local.exampleEn });
-    // best examples: Tatoeba real sentences
-    try {
-      const tato = await tatoebaExamples(fromDe ? q : (de || q));
-      if (tato.length) examples = [...tato, ...examples.filter(x => !tato.some(t => t.de === x.de))];
-    } catch (_) { /* tatoeba optional */ }
+    if (mmR.status === "fulfilled") examples.push(...mmR.value.examples.map(x => ({ ...x, src: "mm" })));
+
+    // 2) sentences need the GERMAN term — search corpora + AI writer in parallel
+    const term = stripArticle(fromDe ? q : (de || q));
+    const needAi = examples.length + (local && local.exampleDe ? 1 : 0) < 3;
+    const [tatoR, aiR] = await Promise.allSettled([
+      tatoebaExamples(term),
+      needAi ? aiExamples(term, en || q) : Promise.resolve([])
+    ]);
+    if (tatoR.status === "fulfilled" && tatoR.value.length) {
+      const tato = tatoR.value.map(x => ({ ...x, src: "tatoeba" }));
+      // natural corpus sentences first, right after the course example
+      const course = examples.filter(x => x.src === "course");
+      const rest = examples.filter(x => x.src !== "course");
+      examples = [...course, ...tato, ...rest.filter(x => !tato.some(t => t.de === x.de))];
+    }
+    if (aiR.status === "fulfilled" && aiR.value.length) {
+      const ai = aiR.value.filter(a => !examples.some(e => e.de === a.de));
+      const course = examples.filter(x => x.src === "course");
+      const tato = examples.filter(x => x.src === "tatoeba");
+      const rest = examples.filter(x => x.src !== "course" && x.src !== "tatoeba");
+      examples = [...course, ...tato, ...ai, ...rest];
+    }
 
     return finish(q, fromDe, de, en, gender, examples, via, false, key);
   }
