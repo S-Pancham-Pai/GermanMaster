@@ -65,6 +65,10 @@ const StageFlow = {
   },
 
   run(s) {
+    if (!Adaptive.isStageUnlocked(s)) { // defense in depth: never run gated content
+      App.setPreview("That stage is still locked — pass the stage before it at 80%+ first.");
+      return;
+    }
     Voice.stop();
     Store.stageSeen(s.id);
     const steps = this.buildSteps(s);

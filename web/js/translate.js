@@ -21,20 +21,57 @@ const Translate = (() => {
   }
 
   function lookupLocal(q) {
-    const needle = normalize(q);
-    const strip = s => normalize(String(s).replace(/^(der|die|das)\s+/i, ""));
-    const stripEn = s => normalize(String(s).replace(/^(the|a|an|to)\s+/i, ""));
+    // strip leading articles/aux from BOTH sides so "die Katze", "the cat",
+    // "Katze" or "cat" all land on the same entry
+    const stripQ = s => normalize(String(s)
+      .replace(/^(der|die|das|den|dem|des|ein|eine|einen|einem)\s+/i, "")
+      .replace(/^(the|a|an|to|my|your)\s+/i, ""));
+    const needle = stripQ(q);
+    const needleBare = normalize(q);
+    const strip = s => normalize(String(s).replace(/^(der|die|das|den|dem|des|ein|eine|einen|einem)\s+/i, ""));
+    const stripEn = s => normalize(String(s).replace(/^(the|a|an|to|my|your)\s+/i, ""));
     const all = Curriculum.allItems();
     const exact = all.find(it =>
       strip(it.de) === needle || stripEn(it.en) === needle ||
+      strip(it.de) === needleBare || stripEn(it.en) === needleBare ||
       deFold(strip(it.de)) === deFold(needle) || deFold(stripEn(it.en)) === deFold(needle));
     if (exact) return exact;
+    // multiword: exact phrase on either side
+    const phrase = all.find(it => normalize(it.de) === needleBare || normalize(it.en) === needleBare);
+    if (phrase) return phrase;
     // single-word query: word-boundary containment inside an item's phrase
-    if (/^[\wäöüßÄÖÜ-]+$/.test(q) && q.length >= 3) {
-      const rx = new RegExp(`\\b${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-      return all.find(it => rx.test(strip(it.de)) || rx.test(stripEn(it.en))) || null;
+    if (/^[\wäöüßÄÖÜ-]+$/.test(needle) && needle.length >= 3) {
+      const rx = new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+      return all.find(it => rx.test(strip(it.de)) || rx.test(stripEn(it.en)) || rx.test(normalize(it.de)) || rx.test(normalize(it.en))) || null;
     }
     return null;
+  }
+
+  /* nearest course entries — powers "did you mean" chips when a lookup misses */
+  function suggestions(q, n = 4) {
+    const stripQ = s => normalize(String(s).replace(/^(der|die|das|the|a|an|to)\s+/i, ""));
+    const words = stripQ(q).split(" ").filter(x => x.length >= 3);
+    if (!words.length) return [];
+    const wordsOf = txt => stripQ(txt).split(" ");
+    return Curriculum.allItems()
+      .map(it => {
+        const toks = [...wordsOf(it.de), ...wordsOf(it.en)];
+        let best = 99;
+        for (const wd of words) {
+          for (const tk of toks) {
+            if (tk === wd) { best = Math.min(best, 0); continue; }
+            if (tk.startsWith(wd) || wd.startsWith(tk)) { best = Math.min(best, 1); continue; }
+            if (tk.includes(wd) || wd.includes(tk)) { best = Math.min(best, 2); continue; }
+            const d = lev(wd, tk);
+            if (d <= (wd.length >= 6 ? 2 : 1)) best = Math.min(best, 3 + d * 0.1);
+          }
+        }
+        return { it, score: best };
+      })
+      .filter(x => x.score < 99)
+      .sort((a, b) => a.score - b.score)
+      .slice(0, n)
+      .map(x => x.it);
   }
 
   const stripArticle = s => String(s).replace(/^(der|die|das)\s+/i, "").trim();
@@ -52,8 +89,10 @@ const Translate = (() => {
   async function myMemoryTranslate(q, fromDe) {
     const pair = fromDe ? "de|en" : "en|de";
     const json = await fetchJSON(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=${pair}`);
-    const translated = (json && json.responseData && json.responseData.translatedText || "").trim();
+    const translated = String((json && json.responseData && json.responseData.translatedText) || "").trim();
     if (!translated || /^[A-Z ]*(QUERY LENGTH|INVALID|MYMEMORY)/i.test(translated)) throw new Error("quota");
+    // MyMemory echoes untranslatable input back — treat an echo as a miss
+    if (normalize(translated) === normalize(q)) throw new Error("echo");
     const examples = [];
     for (const m of (json.matches || [])) {
       const seg = String(m.segment || "").trim(), tr = String(m.translation || "").trim();
@@ -90,6 +129,23 @@ const Translate = (() => {
 
   /* main entry — never throws, always returns a result object or null on empty input */
   async function lookup(text) {
+    try {
+      return await lookupInner(text);
+    } catch (e) {
+      // absolute last resort — Explore must always get an answer-shaped object
+      try {
+        const q = String(text || "").trim().replace(/\s+/g, " ");
+        const local = q ? lookupLocal(q) : null;
+        if (local) return finish(q, detectGerman(q), local.de, local.en, local.gender,
+          local.exampleDe ? [{ de: local.exampleDe, en: local.exampleEn }] : [], "course", true);
+        const fromDe = q ? detectGerman(q) : false;
+        return { query: q, fromDe, de: fromDe ? q : "", en: fromDe ? "" : q, gender: null,
+          examples: [], via: "error", offline: true, idx: 0, suggestions: q ? suggestions(q) : [] };
+      } catch (_) { return null; }
+    }
+  }
+
+  async function lookupInner(text) {
     const q = String(text || "").trim().replace(/\s+/g, " ");
     if (!q) return null;
     const fromDe = detectGerman(q);
@@ -103,7 +159,8 @@ const Translate = (() => {
       }
       return {
         query: q, fromDe, de: fromDe ? q : "", en: fromDe ? "" : q,
-        gender: null, examples: [], via: "noresult", offline: true, idx: 0
+        gender: null, examples: [], via: "noresult", offline: true, idx: 0,
+        suggestions: suggestions(q)
       };
     }
 
@@ -121,7 +178,8 @@ const Translate = (() => {
       examples = mm.examples;
     } catch (e) {
       if (!local) {
-        return { query: q, fromDe, de: fromDe ? q : "", en: fromDe ? "" : q, gender: null, examples: [], via: "error", idx: 0 };
+        return { query: q, fromDe, de: fromDe ? q : "", en: fromDe ? "" : q, gender: null,
+          examples: [], via: "error", idx: 0, suggestions: suggestions(q) };
       }
     }
     if (local && local.exampleDe) examples.unshift({ de: local.exampleDe, en: local.exampleEn });

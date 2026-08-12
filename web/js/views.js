@@ -180,7 +180,16 @@ const Views = {
   },
   drill(kind) {
     const items = Adaptive.unlockedItems();
-    if (!items.length) { App.setPreview("Finish a stage first — drills feed on unlocked words."); return; }
+    const refuse = (title, msg) => {
+      $("#main").innerHTML = `
+        <div class="empty-state">
+          <div class="empty-ico">${icon("lock")}</div>
+          <h2>${title}</h2>
+          <p>${msg}</p>
+          <button class="ghost" data-act="goLearn">Keep learning to unlock it</button>
+        </div>`;
+    };
+    if (!items.length) { refuse("Practice wakes up after your first stage.", "Drills feed on the words and sentences you've unlocked. Finish Unit 1 · Stage 1 first — it takes about two minutes."); return; }
     const nounPool = items.filter(i => i.gender);
     let qs = [];
     const others = (i, f) => shuffle(unique(items.filter(x => x[f] && x[f] !== i[f]).map(x => x[f]))).slice(0, 3);
@@ -194,7 +203,7 @@ const Views = {
         alts: [(i.exampleDe || i.de).replace(/[.!?]$/, "")], item: i, why: ""
       })));
     } else if (kind === "articles") {
-      if (nounPool.length < 4) { App.setPreview("Unlock more vocabulary stages first — the drill needs nouns."); return; }
+      if (nounPool.length < 4) { refuse("Article drill needs more nouns.", `You have ${nounPool.length} noun${nounPool.length === 1 ? "" : "s"} unlocked — this drill needs at least 4. Pass the next vocabulary stage (Unit 2 has plenty) and come back.`); return; }
       qs = shuffle(nounPool).slice(0, 8).map(i => ({
         engine: "mc", kicker: "Which article?", text: i.de.replace(/^(der|die|das)\s+/i, ""),
         options: ["der", "die", "das"], answer: i.gender, item: i,
@@ -220,7 +229,7 @@ const Views = {
       const pool = shuffle(items).slice(0, 8);
       qs = pool.map((i, n) => n % 3 === 2 ? replayer("listen", i) : mc(i, n % 2 ? "de2en" : "en2de"));
     }
-    if (!qs.length) { App.setPreview("Nothing loaded for that drill yet — unlock more stages."); return; }
+    if (!qs.length) { refuse("That drill is still empty.", "It fills up automatically as you unlock stages — try the word sprint meanwhile."); return; }
     RunSession({
       title: "Drill",
       steps: qs,
@@ -253,6 +262,14 @@ const Views = {
       <div class="page-head"><h2>Stories</h2><p>Short graded German — always one step above your level. Listen first, read second, translate only if stuck.</p></div>
       ${STORIES.map(st => {
         const done = (Store.get().read || {})[st.id];
+        const order = Curriculum.LEVELS.map(l => l.code);
+        const locked = order.indexOf(st.level) > order.indexOf(Adaptive.current().code);
+        if (locked) return `
+          <div class="story-card locked" aria-disabled="true">
+            <div class="story-tag">${st.level}</div>
+            <div class="story-copy"><b>${esc(st.title)}</b><span>Unlocks when you reach ${st.level} — ${Adaptive.current().pct}% through ${Adaptive.current().code} now.</span></div>
+            <div class="story-arrow">${icon("lock")}</div>
+          </div>`;
         return `
           <button class="story-card" data-act="story" data-id="${st.id}">
             <div class="story-tag">${st.level}</div>
@@ -334,6 +351,7 @@ const Views = {
         <textarea id="deBox" rows="2" placeholder="Oder Deutsch…">${esc(E.de)}</textarea>
       </div>
       <div class="exp-status" id="expStatus">${E.status ? esc(E.status) : ""}</div>
+      <div class="sug-row ${E.sugs && E.sugs.length ? "show" : ""}" id="sugRow">${E.sugs && E.sugs.length ? `<span class="sug-label">Did you mean:</span>` + E.sugs.slice(0, 4).map(it => `<button class="sug-chip" data-act="sug" data-de="${escAttr(it.de)}">${esc(it.de)}<span>${esc(it.en)}</span></button>`).join("") : ""}</div>
       <div class="sentence-sheet ${E.showSentence && E.result && E.result.examples.length ? "show" : ""}" id="sheet">
         ${E.result ? `
           <div class="sheet-top">
@@ -368,6 +386,53 @@ const Views = {
         <div><b>${cur.name} · ${cur.pct}%</b><span>${Adaptive.nextStage() ? "Next: " + esc(Adaptive.nextStage().title) : "Checkpoint time"}</span></div>
         <div class="you-streak">${icon("flame")} ${S.streak.days} day${S.streak.days === 1 ? "" : "s"}</div>
       </div></div>
+
+      ${(() => {
+        const plan = Adaptive.todayPlan();
+        const doneAll = plan.length && plan.every(x => x.done);
+        const memEntries = Object.entries(S.memory || {});
+        const boxes = [0, 0, 0, 0, 0, 0, 0];
+        memEntries.forEach(([, m]) => { boxes[clamp(m.box || 0, 0, 6)] += 1; });
+        const maxBox = Math.max(1, ...boxes);
+        const dueN = Store.dueCount();
+        const week = [...Array(7)].map((_, i) => {
+          const d = new Date(Date.now() - (6 - i) * 86400000);
+          const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+          return { on: (S.days || {})[key] > 0, label: "SMTWTFS"[d.getDay()], today: i === 6 };
+        });
+        return `
+      <div class="set-group"><div class="set-label">Today's session</div>
+        <div class="set-card">
+          ${plan.map(x => `
+            <div class="set-row today-row ${x.done ? "done" : ""}">
+              <div class="set-ico" style="background:${x.done ? "#e8f8ee" : "var(--violet-soft)"};color:${x.done ? "#1c8a4d" : "var(--violet)"}">${icon(x.done ? "check" : x.kind === "review" ? "refresh" : x.kind === "story" ? "book" : "flag")}</div>
+              <div class="set-copy"><b>${esc(x.label)}</b><span>${x.done ? "Done — nice" : "Still open"}</span></div>
+              ${x.done ? "" : `<button class="set-trail asbtn" data-act="${x.kind === "review" ? "goReview" : x.kind === "story" ? "goStories" : "goLearn"}">Go</button>`}
+            </div>`).join("")}
+          ${doneAll ? `<div class="needs-work"><span>Full plan cleared — the streak grows tonight.</span></div>` : ""}
+        </div>
+      </div>
+
+      <div class="set-group"><div class="set-label">Word memory</div>
+        <div class="set-card">
+          <div class="wk-stats">
+            <div><b>${memEntries.length}</b><span>words in long-term training</span></div>
+            <div><b>${Store.knownCount()}</b><span>recalled correctly</span></div>
+            <div><b>${dueN}</b><span>due right now</span></div>
+          </div>
+          <div class="mini-hist" title="Memory strength by box">
+            ${boxes.map((n, i) => `<div class="mh-col"><i style="height:${Math.round((n / maxBox) * 34) + (n ? 4 : 0)}px"></i><span>${["new", "10m", "1d", "3d", "7d", "14d", "30d"][i]}</span></div>`).join("")}
+          </div>
+          <div class="needs-work"><span>${dueN ? `${dueN} words are fading — clear them in Review.` : "Nothing fading. New words join this queue after every stage."}</span></div>
+        </div>
+      </div>
+
+      <div class="set-group"><div class="set-label">This week</div>
+        <div class="set-card week-card">
+          ${week.map(d => `<div class="week-dot ${d.on ? "on" : ""} ${d.today ? "today" : ""}">${d.on ? icon("check") : ""}<span>${d.label}</span></div>`).join("")}
+        </div>
+      </div>`;
+      })()}
 
       <div class="set-group"><div class="set-label">Skill profile</div>
         <div class="set-card">

@@ -9,6 +9,7 @@ const Store = (() => {
     mistakes: [],        // [{de,en,why,at}]
     streak: { days: 0, last: null },
     read: {},
+    days: {},            // "YYYY-M-D" -> graded actions that day (rolling 14)
     today: { date: null, reviews: 0, stages: 0, stories: 0, drills: 0 },
     settings: {
       passScore: 80,
@@ -50,6 +51,9 @@ const Store = (() => {
       state.streak.days = gap === 1 ? state.streak.days + 1 : 1;
       state.streak.last = t;
     }
+    state.days[t] = (state.days[t] || 0) + 1;
+    const keys = Object.keys(state.days);
+    if (keys.length > 14) delete state.days[keys[0]];
     save();
   }
 

@@ -5,7 +5,7 @@ const App = {
   openUnit: null,
   preview: "",
   typeTimer: null,
-  exp: { en: "", de: "", result: null, exIdx: 0, showSentence: false, status: "" },
+  exp: { en: "", de: "", result: null, exIdx: 0, showSentence: false, status: "", sugs: [] },
   reqToken: 0,
 
   init() {
@@ -120,33 +120,57 @@ const App = {
     const token = ++this.reqToken;
     const en = $("#enBox"), de = $("#deBox");
     const fromEl = source === "en" ? en : de;
-    const text = fromEl.value.trim();
+    const text = (fromEl && fromEl.value || "").trim();
+    const st = $("#expStatus");
+    const toEl = source === "en" ? de : en;
+    const tools = () => { // refresh per-pane tool buttons
+      [["En", en], ["De", de]].forEach(([sfx, el]) => {
+        const has = !!(el && el.value.trim());
+        const spk = $(`.ico[data-act="spk${sfx}"]`), clr = $(`.ico[data-act="clr${sfx}"]`);
+        if (spk) has ? spk.removeAttribute("disabled") : spk.setAttribute("disabled", "");
+        if (clr) has ? clr.removeAttribute("disabled") : clr.setAttribute("disabled", "");
+      });
+    };
     if (!text) {
-      this.exp.result = null; this.exp.status = "";
+      this.exp.result = null; this.exp.status = ""; this.exp.sugs = [];
       $("#quoteBtn").classList.remove("show");
-      const st = $("#expStatus"); if (st) st.textContent = "";
+      if (st) st.textContent = "";
       const sheet = $("#sheet"); if (sheet) sheet.classList.remove("show");
+      this.renderSugs();
+      tools();
       return;
     }
     this.exp.status = "Translating…";
-    const st = $("#expStatus");
     if (st) st.innerHTML = `<span class="spinner"></span> Translating…`;
-    const toEl = source === "en" ? de : en;
     toEl.classList.add("busy");
-    const r = await Translate.lookup(text);
+    let r = null;
+    try {
+      r = await Translate.lookup(text);
+    } catch (e) { r = null; } // lookup never throws, but never trust the network
     if (token !== this.reqToken) return; // newer request won
     toEl.classList.remove("busy");
-    if (!r) return;
+    if (!r) {
+      this.exp.result = null; this.exp.sugs = [];
+      this.exp.status = "Something hiccuped — please try that once more.";
+      if (st) st.textContent = this.exp.status;
+      this.renderSugs(); tools();
+      return;
+    }
     this.exp.result = r;
     this.exp.exIdx = 0;
     this.exp.en = en.value;
     this.exp.de = de.value;
-    if (r.via === "error") {
-      this.exp.status = navigator.onLine
-        ? "The live dictionary is busy right now — try again in a moment."
-        : "You're offline and this isn't a course word yet.";
-    } else if (r.via === "noresult") {
-      this.exp.status = "Not in your course vocabulary — connect to the internet for the live dictionary.";
+    this.exp.sugs = r.suggestions || [];
+    const missing = !r || r.via === "error" || r.via === "noresult";
+    if (missing) {
+      // clear the stale pane so the user never sees an old answer and thinks it's the new one
+      toEl.value = ""; this.exp[source === "en" ? "de" : "en"] = ""; autoSize(toEl);
+      $("#quoteBtn").classList.remove("show");
+      this.exp.status = r.via === "error"
+        ? (navigator.onLine
+          ? `Couldn't reach the live dictionary for “${text}” — try again in a moment.`
+          : `“${text}” isn't in your course yet, and you're offline — the live dictionary needs internet.`)
+        : `“${text}” isn't in your course vocabulary${navigator.onLine ? " or the live dictionary" : ""}.${this.exp.sugs.length ? " Did you mean one of these?" : " Try another word — everything you learn lands here instantly."}`;
     } else {
       const val = source === "en" ? r.de : r.en;
       if (val) {
@@ -160,18 +184,39 @@ const App = {
         this.exp.status += " · tap 💬 for a real example sentence";
       } else {
         $("#quoteBtn").classList.remove("show");
-        if (r.via !== "error") this.exp.status += " · no example found for this one — the translation is still solid";
+        this.exp.status += " · no example sentence found for this one — the translation is still solid";
       }
-      $(`.ico[data-act="spk${source === "en" ? "De" : "En"}"]`)?.removeAttribute("disabled");
     }
     if (st) st.textContent = this.exp.status;
+    this.renderSugs();
     this.renderSheet();
+    tools();
+  },
+
+  renderSugs() {
+    const row = $("#sugRow");
+    if (!row) return;
+    const sugs = (this.exp.sugs || []).slice(0, 4);
+    if (!sugs.length) { row.innerHTML = ""; row.classList.remove("show"); return; }
+    row.innerHTML = `<span class="sug-label">Did you mean:</span>` + sugs.map(it =>
+      `<button class="sug-chip" data-act="sug" data-de="${escAttr(it.de)}">${esc(it.de)}<span>${esc(it.en)}</span></button>`
+    ).join("");
+    row.classList.add("show");
   },
   renderSheet() {
     const r = this.exp.result;
     const sheet = $("#sheet");
     if (!sheet) return;
-    if (!r || !r.examples || !r.examples.length) { sheet.classList.remove("show"); sheet.innerHTML = ""; return; }
+    if (!r) { sheet.classList.remove("show"); sheet.innerHTML = ""; return; }
+    if (!r.examples || !r.examples.length) {
+      if (this.exp.showSentence) {
+        sheet.innerHTML = `
+          <div class="sheet-top"><h3>In a real sentence</h3></div>
+          <div class="sentence-en">No real-life sentence found for “${esc(r.query)}” yet — the course examples grow as you pass stages.</div>`;
+        sheet.classList.add("show");
+      } else { sheet.classList.remove("show"); sheet.innerHTML = ""; }
+      return;
+    }
     const ex = r.examples[this.exp.exIdx % r.examples.length];
     sheet.innerHTML = `
       <div class="sheet-top">
@@ -303,6 +348,8 @@ const App = {
       /* practice */
       case "drill": Views.drill(t.dataset.d); break;
       case "goPractice": this.tab = "practice"; this.render(); break;
+      case "goReview": this.tab = "review"; this.render(); break;
+      case "goStories": this.tab = "stories"; this.render(); break;
 
       /* stories */
       case "story": Views.openStory(d.id); break;
@@ -379,6 +426,15 @@ const App = {
       case "clrDe": { const b = $("#deBox"); b.value = ""; this.exp.de = ""; this.focusBox("de"); break; }
       case "spkEn": Voice.speak($("#enBox").value, { lang: "en" }); break;
       case "spkDe": Voice.speak($("#deBox").value, { lang: "de" }); break;
+      case "sug": {
+        const word = d.de || "";
+        const box = $("#deBox");
+        if (box) {
+          box.value = word; this.exp.de = word; autoSize(box);
+          this.expRun("de");
+        }
+        break;
+      }
       case "nextEx": {
         const r = this.exp.result;
         if (r && r.examples.length) {
@@ -400,7 +456,7 @@ const App = {
         if (confirm("Reset all progress and memory? This can't be undone.")) {
           Store.reset();
           views_story_reset();
-          this.openLevel = "A1"; this.openUnit = null; Views.story = null; this.exp = { en: "", de: "", result: null, exIdx: 0, showSentence: false, status: "" };
+          this.openLevel = "A1"; this.openUnit = null; Views.story = null; this.exp = { en: "", de: "", result: null, exIdx: 0, showSentence: false, status: "", sugs: [] };
           this.render();
         }
         break;

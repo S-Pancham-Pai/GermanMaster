@@ -83,15 +83,20 @@ const Adaptive = {
     return plan;
   },
   unlockedItems() {
-    /* every stage the learner can currently reach in an unlocked unit */
+    /* everything up to and including the current unit's reachable stages;
+       once a unit has a passed stage, its full item set joins the drill pool
+       so Practice never runs dry mid-unit */
     const out = [];
     for (const lv of Curriculum.LEVELS) {
       if (!this.isLevelUnlocked(lv.code)) continue;
       for (const u of Curriculum.levelUnits(lv.code)) {
         if (!this.isUnitUnlocked(u)) break;
+        const st = this.unitStats(u);
+        if (st.passed > 0) { out.push(...Curriculum.unitItems(u)); continue; }
         for (const s of u.stages) {
           if (this.isStageUnlocked(s) || Store.stage(s.id)) out.push(...Curriculum.stageItems(s));
         }
+        break; // deeper units stay out of drills
       }
     }
     const seen = new Set();
