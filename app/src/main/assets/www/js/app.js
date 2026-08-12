@@ -177,7 +177,10 @@ const App = {
         toEl.value = val;
         this.exp[source === "en" ? "de" : "en"] = val;
         autoSize(toEl);
-        this.exp.status = r.via === "course" ? "From your course — instant" : (r.cached ? "From memory — instant" : "Live translation");
+        this.exp.status = r.via === "course" ? "From your course — instant"
+          : r.via === "dict" ? "Pocket dictionary — works offline"
+          : r.via === "gloss" ? "Word-by-word (offline) — internet gives the full sentence"
+          : (r.cached ? "From memory — instant" : "Live translation");
       } else this.exp.status = "";
       if (r.examples && r.examples.length) {
         $("#quoteBtn").classList.add("show");
@@ -227,7 +230,7 @@ const App = {
       <div class="sentence-en">${esc(ex.en)}</div>
       <div class="sheet-foot">
         <button class="ghost" data-act="spkEx">${icon("speaker")} Listen</button>
-        <span class="sheet-via">${({ course: "from your course", tatoeba: "real sentence · Tatoeba", ai: "written by AI — practice example", mm: "from real translated texts" })[ex.src] || (r.via === "course" ? "from your course" : "from the web")}</span>
+        <span class="sheet-via">${({ course: "from your course", dict: "from the pocket dictionary", tatoeba: "real sentence · Tatoeba", ai: "written by AI — practice example", mm: "from real translated texts" })[ex.src] || (r.via === "course" ? "from your course" : r.via === "dict" ? "pocket dictionary" : "from the web")}</span>
       </div>`;
     if (this.exp.showSentence) sheet.classList.add("show");
   },

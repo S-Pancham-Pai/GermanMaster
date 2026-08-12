@@ -362,7 +362,7 @@ const Views = {
           <div class="sentence-en">${esc(E.result.examples[E.exIdx] ? E.result.examples[E.exIdx].en : "")}</div>
           <div class="sheet-foot">
             <button class="ghost" data-act="spkEx">${icon("speaker")} Listen</button>
-            <span class="sheet-via">${(() => { const x = E.result.examples[E.exIdx] || {}; const L = { course: "from your course", tatoeba: "real sentence · Tatoeba", ai: "written by AI — practice example", mm: "from real translated texts" }; return L[x.src] || (E.result.via === "course" ? "from your course" : "from the web"); })()}</span>
+            <span class="sheet-via">${(() => { const x = E.result.examples[E.exIdx] || {}; const L = { course: "from your course", dict: "from the pocket dictionary", tatoeba: "real sentence · Tatoeba", ai: "written by AI — practice example", mm: "from real translated texts" }; return L[x.src] || (E.result.via === "course" ? "from your course" : E.result.via === "dict" ? "pocket dictionary" : "from the web"); })()}</span>
           </div>` : ""}
       </div>`;
   },

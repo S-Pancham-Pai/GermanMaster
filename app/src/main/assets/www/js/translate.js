@@ -14,10 +14,53 @@ const Translate = (() => {
   };
 
   function detectGerman(text) {
-    const t = " " + text.trim().toLowerCase() + " ";
+    const t = " " + String(text).toLowerCase()
+      .replace(/[.,!?…:;()„“"»«']/g, " ").replace(/\s+/g, " ") + " ";
     if (/[äöüß]/.test(t)) return true;
-    const words = ["der ", "die ", "das ", "ich ", "du ", "und ", "nicht ", "mit ", "für ", "ein ", "eine ", "ist ", "wie ", "was ", "guten ", "vielen "];
-    return words.some(w => t.includes(w));
+    const words = [
+      "der", "die", "das", "den", "dem", "des", "ich", "du", "er", "sie", "es", "wir", "ihr",
+      "mich", "dich", "ihn", "uns", "euch", "und", "nicht", "mit", "für", "ein", "eine", "einen",
+      "ist", "sind", "bin", "bist", "seid", "habe", "hat", "wie", "was", "guten", "vielen",
+      "bitte", "danke", "kein", "keine", "jetzt", "heute", "morgen", "gestern", "wo", "warum",
+      "wann", "woher", "wohin", "hier", "dort", "immer", "nie", "noch", "schon", "sehr", "viel",
+      "gut", "neu", "alt", "schnell", "langsam", "helfen", "hilfe", "gehen", "kommen", "sehen",
+      "essen", "trinken", "wissen", "können", "müssen", "wollen", "haben", "sein", "werden",
+      "vielleicht", "ziemlich", "eigentlich", "wirklich", "manchmal", "meine", "mein", "deine",
+      "dein", "diese", "dieser", "dieses", "jeder", "alle", "alles", "etwas", "nichts"
+    ];
+    const padded = " " + t.trim() + " ";
+    return words.some(w => padded.includes(" " + w + " "));
+  }
+
+  /* pocket dictionary lookup (offline-capable); returns an item-shaped hit or null */
+  function lookupDict(q) {
+    const stripQ = s => normalize(String(s)
+      .replace(/^(der|die|das|den|dem|des|ein|eine|einen|einem)\s+/i, "")
+      .replace(/^(the|a|an|to|my|your|its)\s+/i, ""));
+    const needle = stripQ(q);
+    const bare = normalize(q);
+    if (!needle) return null;
+    const hit = DICT.entries.find(it =>
+      stripQ(it.de) === needle || stripQ(it.en) === needle ||
+      normalize(it.de) === bare || normalize(it.en) === bare ||
+      deFold(stripQ(it.de)) === deFold(needle));
+    if (hit) return hit;
+    if (/^[\wäöüßÄÖÜ-]+$/.test(needle) && needle.length >= 3) {
+      const rx = new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+      return DICT.entries.find(it => rx.test(stripQ(it.de)) || rx.test(stripQ(it.en))) || null;
+    }
+    return null;
+  }
+
+  /* word-by-word gloss for offline phrases — honest, never fakes a full translation */
+  function glossWords(q, toGerman) {
+    const strip = s => normalize(String(s)
+      .replace(/^(der|die|das|den|dem|des|ein|eine|einen|einem|the|a|an|to|my|your)\s+/i, ""));
+    return q.split(/\s+/).filter(Boolean).map(w => {
+      const hit = lookupDict(w) || (Curriculum.allItems().find(it => strip(it.de) === strip(w) || strip(it.en) === strip(w)));
+      if (!hit) return w;
+      return toGerman ? hit.de : hit.en.replace(/^(the|a|an|to)\s+/i, "");
+    }).join(" · ");
   }
 
   function lookupLocal(q) {
@@ -198,6 +241,21 @@ const Translate = (() => {
         return finish(q, fromDe, local.de, local.en, local.gender,
           local.exampleDe ? [{ de: local.exampleDe, en: local.exampleEn, src: "course" }] : [], "course", true);
       }
+      const dh = lookupDict(q);
+      if (dh) {
+        return finish(q, fromDe, dh.de, dh.en, dh.gender,
+          dh.exampleDe ? [{ de: dh.exampleDe, en: dh.exampleEn, src: "dict" }] : [], "dict", true);
+      }
+      // multiword offline: honest word-by-word gloss
+      if (q.includes(" ")) {
+        const gloss = glossWords(q, !fromDe);
+        return {
+          query: q, fromDe,
+          de: fromDe ? q : gloss, en: fromDe ? gloss : q,
+          gender: null, examples: [], via: "gloss", offline: true, idx: 0,
+          suggestions: suggestions(q)
+        };
+      }
       return {
         query: q, fromDe, de: fromDe ? q : "", en: fromDe ? "" : q,
         gender: null, examples: [], via: "noresult", offline: true, idx: 0,
@@ -205,14 +263,16 @@ const Translate = (() => {
       };
     }
 
-    // online path
-    const local = lookupLocal(q);
+    // online path — course first, then the pocket dictionary (both instant), then the web
+    const courseHit = lookupLocal(q);
+    const dictHit = courseHit ? null : lookupDict(q);
+    const local = courseHit || dictHit;
     let de = fromDe ? q : "", en = fromDe ? "" : q, gender = local ? local.gender : null;
     let examples = [];
     let via = "live";
 
-    if (local) { de = local.de; en = local.en; via = "course"; }
-    if (local && local.exampleDe) examples.push({ de: local.exampleDe, en: local.exampleEn, src: "course" });
+    if (local) { de = local.de; en = local.en; via = courseHit ? "course" : "dict"; }
+    if (local && local.exampleDe) examples.push({ de: local.exampleDe, en: local.exampleEn, src: courseHit ? "course" : "dict" });
 
     // 1) translation: Google Translate + MyMemory race in parallel — first good one wins
     const [gtR, mmR] = await Promise.allSettled([googleTranslate(q, fromDe), myMemoryTranslate(q, fromDe)]);
@@ -230,7 +290,7 @@ const Translate = (() => {
 
     // 2) sentences need the GERMAN term — search corpora + AI writer in parallel
     const term = stripArticle(fromDe ? q : (de || q));
-    const needAi = examples.length + (local && local.exampleDe ? 1 : 0) < 3;
+    const needAi = examples.length + (local && local.exampleDe ? 1 : 0) < 3; /* seeded course/dict example already counted above */
     const [tatoR, aiR] = await Promise.allSettled([
       tatoebaExamples(term),
       needAi ? aiExamples(term, en || q) : Promise.resolve([])
