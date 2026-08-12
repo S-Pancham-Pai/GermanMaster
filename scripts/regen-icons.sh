@@ -28,11 +28,12 @@ for pair in $SIZES; do
   out="app/src/main/res/mipmap-${dir}"
   mkdir -p "$out"
   convert "$SRC" -resize "${px}x${px}" "$out/ic_launcher.png"
-  # circular crop for the round variant (precompute the radius — MVG can't do math)
+  # circular crop for the round variant (precompute the radius — MVG can't do math;
+  # mask must be transparent-canvas + PNG32 output, otherwise alpha is silently dropped)
   half=$((px / 2))
-  convert "$SRC" -resize "${px}x${px}" -alpha set \
-    \( -size "${px}x${px}" xc:black -fill white -draw "circle ${half},${half} ${half},0" \) \
-    -compose CopyOpacity -composite "$out/ic_launcher_round.png"
+  convert "$SRC" -resize "${px}x${px}" \
+    \( -size "${px}x${px}" xc:none -fill white -draw "circle ${half},${half} ${half},0" \) \
+    -compose CopyOpacity -composite "PNG32:$out/ic_launcher_round.png"
   echo "wrote $out/ic_launcher{,_round}.png (${px}px)"
 done
 cp "$SRC" branding/ic_launcher-512.png 2>/dev/null || true
