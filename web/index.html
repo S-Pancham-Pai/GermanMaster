@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#F2EDF7" />
+  <title>GermanMaster</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <div class="ambient" aria-hidden="true">
+    <span class="orb orb-a"></span>
+    <span class="orb orb-b"></span>
+    <span class="orb orb-c"></span>
+  </div>
+
+  <div id="app" class="phone">
+    <header class="topbar">
+      <div class="progress-chip">
+        <span class="progress-level" id="progressLevel">A1</span>
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+        <span class="progress-pct" id="progressPct">0%</span>
+        <span class="streak-mini"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c1 3-2 4.5-2 7a4.5 4.5 0 0 0 9 .5C19 7 14 6 12 3z"/><path d="M10.5 21a5.5 5.5 0 0 1-5-5.5C5.5 12 8 10 9 8"/></svg><span id="streakChip">0</span></span>
+      </div>
+    </header>
+
+    <main id="main" class="main"></main>
+
+    <button class="float-quote" id="quoteBtn" aria-label="Real example sentence">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 17h4l2-5V7H5v5h4zm8 0h4l2-5V7h-8v5h4z"/></svg>
+    </button>
+
+    <nav class="dock" id="dock" aria-label="Sections">
+      <button class="dock-btn active" data-tab="learn"><span class="dock-glow"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3.5 6v14L9 18l6 2 5.5-2V4L15 6z"/><path d="M9 4v14M15 6v14"/></svg>
+        <span>Learn</span></button>
+      <button class="dock-btn" data-tab="review"><span class="dock-glow"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.3M20 5v6h-6"/></svg>
+        <span>Review</span></button>
+      <button class="dock-btn" data-tab="practice"><span class="dock-glow"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3 5 13.5h5L11 21l8-10.5h-5z"/></svg>
+        <span>Practice</span></button>
+      <button class="dock-btn" data-tab="stories"><span class="dock-glow"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5v15"/></svg>
+        <span>Stories</span></button>
+      <button class="dock-btn" data-tab="explore"><span class="dock-glow"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M8.5 4v2c0 3.5-2.4 6.6-5 8"/><path d="M6.5 9.5c1 2.4 3.3 4.6 6 5.5"/><path d="M12.5 20l4-9 4 9M14 17h5"/></svg>
+        <span>Explore</span></button>
+      <button class="dock-btn" data-tab="you"><span class="dock-glow"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"/><path d="M5 20a7.5 7.5 0 0 1 14 0"/></svg>
+        <span>You</span></button>
+    </nav>
+  </div>
+
+  <script src="js/util.js"></script>
+  <script src="js/banks.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/voice.js"></script>
+  <script src="js/translate.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/stories.js"></script>
+  <script src="js/adaptive.js"></script>
+  <script src="js/engines.js"></script>
+  <script src="js/stage.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
