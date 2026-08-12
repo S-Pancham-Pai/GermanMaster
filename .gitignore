@@ -13,3 +13,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# web test harness
+/tests/node_modules/
