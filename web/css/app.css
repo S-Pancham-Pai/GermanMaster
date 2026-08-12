@@ -720,3 +720,17 @@ body { font-weight: 500; }
 
 /* floating quote button, easier thumb target */
 .float-quote { width: 60px; height: 60px; }
+
+/* ============ v3.4 — final polish: gradients where it counts, headers, favicon ============ */
+.level-badge { background: linear-gradient(135deg, #7055c2, #5638a8); color: #fff; box-shadow: 0 4px 12px rgba(86, 56, 168, 0.28); }
+.level.locked .level-badge { background: #eceaf1; color: var(--lock); box-shadow: none; }
+.you-level { background: linear-gradient(135deg, #7055c2, #5638a8); box-shadow: 0 6px 16px rgba(86, 56, 168, 0.32); }
+.run-title { font-size: 13.5px; }
+.result-sub { font-size: 16px; }
+.mission-line { font-size: 17px; }
+.page-head p b { color: var(--violet-deep); }
+.stage-row:not(.locked):hover { border-color: #c9bce8; }
+.empty-state h2 { font-size: 28px; }
+.score-ring { filter: drop-shadow(0 4px 14px rgba(86, 56, 168, 0.18)); }
+.today-card .today-title svg { color: var(--violet-deep); }
+.progress-fill { box-shadow: 0 1px 4px rgba(201, 79, 124, 0.35); }
