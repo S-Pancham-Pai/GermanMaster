@@ -2,7 +2,7 @@
    Order: course bank (instant) -> MyMemory (translation) ->
    Tatoeba (real sentences from real texts) -> MyMemory matches. */
 const Translate = (() => {
-  const CACHE_KEY = "germanmaster.tcache.v1";
+  const CACHE_KEY = "germanmaster.tcache.v2";   // v2: bulk dictionary era
   let cache = {};
   try { cache = JSON.parse(localStorage.getItem(CACHE_KEY) || "{}"); } catch (_) { cache = {}; }
   const saveCache = () => {
@@ -40,6 +40,21 @@ const Translate = (() => {
     const needle = stripQ(q);
     const bare = normalize(q);
     if (!needle) return null;
+    if (DICT.byKey) {   // ~6k entries: always hit the prebuilt index, never a full scan
+      const hit = DICT.byKey.get(needle) || DICT.byKey.get(bare) ||
+                  DICT.byKey.get(deFold(needle)) || DICT.byKey.get(deFold(bare));
+      if (hit) return hit;
+      if (/^[\wäöüßÄÖÜ-]+$/.test(needle) && needle.length >= 3) {
+        // word-boundary fallback over the curated slice only (multiword phrases live there)
+        const rx = new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+        const N = Math.min(DICT.entries.length, 700);
+        for (let i = 0; i < N; i++) {
+          const it = DICT.entries[i];
+          if (rx.test(stripQ(it.de)) || rx.test(stripQ(it.en))) return it;
+        }
+      }
+      return null;
+    }
     const hit = DICT.entries.find(it =>
       stripQ(it.de) === needle || stripQ(it.en) === needle ||
       normalize(it.de) === bare || normalize(it.en) === bare ||

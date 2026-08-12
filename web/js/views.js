@@ -327,7 +327,7 @@ const Views = {
   exploreView() {
     const E = App.exp;
     return `
-      <div class="page-head slim"><p>Type a word or sentence in <b>either</b> box, then hit Go — the other side fills in. ${navigator.onLine ? "" : "You're offline: course words only."}</p></div>
+      <div class="page-head slim"><p>Type a word or sentence in <b>either</b> box, then hit Go — the other side fills in. ${navigator.onLine ? "" : `You're offline — the pocket dictionary (${(typeof DICT !== "undefined" ? DICT.entries.length : 0).toLocaleString("en-US")} words) still works.`}</p></div>
       <div class="pane">
         <div class="pane-top">
           <span class="lang">English</span>

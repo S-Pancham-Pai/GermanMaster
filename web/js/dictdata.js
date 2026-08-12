@@ -1,4 +1,5 @@
-/* Pocket dictionary — curated core German for A1/A2 learners.
+/* Pocket dictionary — curated core German for A1/A2 learners (with examples),
+   merged at load time with the ~5,600-lemma bulk dictionary in dictbulk.js.
    Works with zero internet; the online layers add more on top.
    D(german, english, pos, gender, exampleDe, exampleEn) */
 const DICT = (() => {
@@ -505,5 +506,37 @@ const DICT = (() => {
   ];
   const stripKey = s => String(s).replace(/^(der|die|das|den|dem|des|ein|eine|einen|einem)\s+/i, "").trim().toLowerCase();
   const stripEnKey = s => String(s).replace(/^(the|a|an|to|my|your|its)\s+/i, "").trim().toLowerCase();
-  return { entries, stripKey, stripEnKey };
+
+  /* --- merge the bulk offline dictionary (window.__DICTBULK from dictbulk.js) ---
+     rows: [german, english, posCode, genderCode]; curated entries keep priority. */
+  const BPOS = { n: "noun", v: "verb", j: "adjective", b: "adverb", p: "preposition", c: "conjunction", o: "pronoun", m: "number", i: "interjection", t: "determiner", x: "word" };
+  const BGEN = { m: "der", f: "die", n: "das" };
+  const seen = new Set();
+  entries.forEach(it => seen.add(stripKey(it.de)));
+  (window.__DICTBULK || []).forEach(r => {
+    if (!r || !r[0] || !r[1]) return;
+    const art = BGEN[r[3]] || "";
+    const pos = BPOS[r[2]] || "word";
+    const de = art ? art + " " + r[0] : r[0];
+    const k1 = stripKey(de), k2 = k1 + "|" + pos;
+    if (seen.has(k1) || seen.has(k2)) return;   // curated (or earlier bulk) wins
+    seen.add(k2);
+    entries.push({ de, en: r[1], pos, gender: art || null, exampleDe: "", exampleEn: "" });
+  });
+
+  /* --- fast lookup index so ~6k entries never need a linear scan --- */
+  const byKey = new Map();
+  const norm = s => String(s ?? "").trim().toLowerCase().replace(/[.…?!„“"»«']/g, "").replace(/\s+/g, " ");
+  const fold = s => norm(s).replace(/ä/g, "a").replace(/ö/g, "o").replace(/ü/g, "u").replace(/ß/g, "ss");
+  const idx = (k, it) => { if (k && !byKey.has(k)) byKey.set(k, it); };
+  entries.forEach(it => {
+    idx(stripKey(it.de), it); idx(stripEnKey(it.en), it);
+    idx(norm(it.de), it); idx(norm(it.en), it);
+    idx(fold(stripKey(it.de)), it); idx(fold(stripEnKey(it.en)), it);
+    String(it.en).split(/[;/]/).forEach(part => {   // "friend; mate" → both find it
+      const k = norm(part).replace(/^(the|a|an|to|my|your|its)\s+/i, "");
+      if (!/[()]/.test(k)) idx(k, it);              // skip "(house)"-style asides
+    });
+  });
+  return { entries, stripKey, stripEnKey, byKey };
 })();
