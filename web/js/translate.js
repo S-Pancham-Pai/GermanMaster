@@ -155,12 +155,17 @@ const Translate = (() => {
   }
 
   /* Tatoeba & the AI writer don't always send CORS headers, which silently
-     kills them on phones. Try direct first, then public CORS relays. */
-  const RELAYS = [
-    u => u,
+     kills them on phones — and some networks block individual relay hosts.
+     So we race direct + several INDEPENDENT relays; first success wins. */
+  const RELAYS_JSON = [
+    u => u,                                                              // direct, when CORS allows
     u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
-    u => "https://corsproxy.io/?url=" + encodeURIComponent(u)
+    u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
+    u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u)
   ];
+  /* the jina.ai reader relay returns plain text — useless for JSON APIs,
+     but a genuine extra route for the AI writer's prose */
+  const RELAYS_TEXT = [...RELAYS_JSON, u => "https://r.jina.ai/" + u];
   function firstSuccess(promises) {
     let left = promises.length, lastErr = null;
     return new Promise((done, fail) => {
@@ -169,7 +174,8 @@ const Translate = (() => {
     });
   }
   function fetchRelay(url, ms, wantJson) {   // direct + relays race in parallel — first success wins
-    return firstSuccess(RELAYS.map(wrap => (wantJson ? fetchJSON(wrap(url), ms) : fetchText(wrap(url), ms))));
+    const rels = wantJson ? RELAYS_JSON : RELAYS_TEXT;
+    return firstSuccess(rels.map(wrap => (wantJson ? fetchJSON(wrap(url), ms) : fetchText(wrap(url), ms))));
   }
 
   /* Google Translate's own endpoint — the same engine Google Search uses.
@@ -205,16 +211,17 @@ const Translate = (() => {
     const batch = Math.random().toString(36).slice(2, 8);
     const prompt = `Write 4 different short, natural German sentences (CEFR A1-A2, everyday conversational style, one could be a question) using the German word "${w}"${enHint ? ` (it means: "${String(enHint).slice(0, 40)}")` : ""}. Set each sentence in a scene about: ${topics}. Each sentence must actually contain the word "${w}". Add an English translation for each. Reply with ONLY the lines, exactly in this format, nothing else:\nGerman sentence => English translation\n\n(batch ${batch})`;
     let txt = "";
+    const pol = "https://text.pollinations.ai/";
     try {
-      txt = await fetchRelay("https://text.pollinations.ai/" + encodeURIComponent(prompt), 9500);
+      txt = await fetchRelay(pol + encodeURIComponent(prompt) + "?referrer=germanmaster-app", 9500);
     } catch (_) {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 9000);
       try {
-        const res = await fetch("https://text.pollinations.ai/", {
+        const res = await fetch(pol, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: [{ role: "user", content: prompt }] }),
+          body: JSON.stringify({ messages: [{ role: "user", content: prompt }], model: "openai-fast", referrer: "germanmaster-app" }),
           signal: ctrl.signal
         });
         if (res.ok) txt = await res.text();
@@ -382,35 +389,122 @@ const Translate = (() => {
     return res;
   }
 
+  /* Wiktionary (de.wiktionary.org) sends CORS headers and is reachable on
+     networks that block relay hosts — real dictionary example sentences.
+     No English there, so each line gets a Google translation on the fly. */
+  async function wiktExamples(deTerm) {
+    const term = stripArticle(deTerm).trim();
+    if (!term || term.length > 32 || term.includes(" ")) return [];
+    const title = term.charAt(0).toUpperCase() + term.slice(1);
+    const url = "https://de.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&format=json&origin=*&titles=" + encodeURIComponent(title);
+    const json = await fetchRelay(url, 8000, true);
+    const pages = (json && json.query && json.query.pages) || {};
+    let ext = "";
+    for (const k in pages) if (pages[k] && typeof pages[k].extract === "string") ext = pages[k].extract;
+    if (!ext) return [];
+    const rx = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    const cands = [];
+    for (const raw of ext.split(/\n+/)) {
+      const line = raw.replace(/^\[\d+\]\s*/, "").replace(/^[:*#›»\s]+/, "").replace(/^["„“′']+|["“”′']+$/g, "").trim();
+      if (line.length < 14 || line.length > 110) continue;
+      if (!/[.!?…]["”»]?$/.test(line)) continue;
+      if (!rx.test(line)) continue;
+      if (/[{<]|\|/ .test(line) || /Beispiele|Wortart|Aussprache|Herkunft|Übersetzungen|Bedeutungen|Wortbildung|Gegenwörter|Verweise/.test(line)) continue;
+      if (!cands.includes(line)) cands.push(line);
+      if (cands.length >= 3) break;
+    }
+    const settled = await Promise.allSettled(cands.map(async de => {
+      const t = await googleTranslate(de, true);
+      return { de, en: t.text, src: "wikt" };
+    }));
+    return settled.filter(s => s.status === "fulfilled" && s.value.en && s.value.en.length > 3).map(s => s.value);
+  }
+
+  /* Built-in practice-line writer — grammar-safe templates fed by the pocket
+     dictionary's gender/part-of-speech. Guarantees the sheet is NEVER empty,
+     even when every network source is unreachable. */
+  function miniWriter(deTerm, enHint) {
+    const raw = stripArticle(deTerm).trim();
+    if (!raw || raw.length > 30) return [];
+    const hit = lookupDict(raw) || lookupLocal(raw) || null;
+    const en = (String((hit && hit.en) || enHint || "").replace(/^(the|a|an|to)\s+/i, "")
+      .split(/[;/]/)[0].trim()) || raw;
+    const pos = hit && hit.pos ? hit.pos : "";
+    const g = hit && hit.gender;                    // "der" | "die" | "das" | null
+    const T = raw.charAt(0).toUpperCase() + raw.slice(1);
+    const out = [];
+    const push = (de, enT) => { if (de && enT && !out.some(x => x.de === de)) out.push({ de, en: enT, src: "mini" }); };
+    if (pos === "noun" || g) {
+      const def = g === "der" ? "Der" : g === "die" ? "Die" : "Das";
+      const akk = g === "der" ? "einen" : g === "die" ? "eine" : "ein";
+      const nom = g === "die" ? "eine" : "ein";
+      push(`${def} ${T} ist hier.`, `The ${en} is here.`);
+      push(`Ich sehe ${akk} ${T}.`, `I see a ${en}.`);
+      push(`Wo ist ${def.toLowerCase()} ${T}?`, `Where is the ${en}?`);
+      push(`„${T}“ heißt „${en}“ auf Englisch.`, `"${T}" means "${en}" in English.`);
+    } else if (pos === "verb") {
+      const inf = raw.toLowerCase();
+      push(`Ich will ${inf}.`, `I want to ${en}.`);
+      push(`Wir müssen heute ${inf}.`, `We have to ${en} today.`);
+      push(`Kannst du ${inf}?`, `Can you ${en}?`);
+      push(`„${T}“ heißt „${en}“ auf Englisch.`, `"${T}" means "${en}" in English.`);
+    } else if (pos === "adjective") {
+      const a = raw.toLowerCase();
+      push(`Das ist sehr ${a}.`, `That is very ${en}.`);
+      push(`Das Wetter ist heute ${a}.`, `The weather is ${en} today.`);
+      push(`Ich finde das ${a}.`, `I think that is ${en}.`);
+      push(`„${T}“ heißt „${en}“ auf Englisch.`, `"${T}" means "${en}" in English.`);
+    } else if (raw) {                               // unknown word — always-true lines about the word itself
+      push(`„${T}“ heißt „${en}“ auf Englisch.`, `"${T}" means "${en}" in English.`);
+      push(`Ich lerne das Wort „${T}“.`, `I am learning the word "${T}".`);
+      push(`Was bedeutet „${T}“?`, `What does "${T}" mean?`);
+      push(`Kannst du „${T}“ sagen?`, `Can you say "${T}"?`);
+    }
+    return out.slice(0, 4);
+  }
+
   /* Example sentences, loaded AFTER the translation is already showing.
-     onlyAi = regenerate just the AI-written batch (the sparkle button). */
+     onlyAi = regenerate just the AI-written batch (the sparkle button).
+     If every network source fails, the built-in writer guarantees lines. */
   async function loadExamples(res, opts) {
     const onlyAi = !!(opts && opts.onlyAi);
     if (!res || res.offline || !navigator.onLine || !Store.get().settings.onlineDict) return res;
     const term = stripArticle(res.fromDe ? res.query : (res.de || res.query));
     if (!term || term.length > 40) return { ...res, examplesPending: false };
     const jobs = onlyAi ? [aiExamples(term, res.en || res.query)]
-      : [tatoebaExamples(term), aiExamples(term, res.en || res.query)];
+      : [tatoebaExamples(term), aiExamples(term, res.en || res.query), wiktExamples(term)];
     const settled = await Promise.allSettled(jobs);
     const val = r => (r.status === "fulfilled" ? r.value : []);
     const tato = onlyAi ? [] : val(settled[0]).map(x => ({ ...x, src: "tatoeba" }));
-    const ai = val(settled[settled.length - 1]);
-    // rebuild: course/dict first, then fresh AI, then corpus, keeping old non-refreshed ones
-    const keep = (res.examples || []).filter(x => x.src !== "ai" && (onlyAi || x.src !== "tatoeba"));
+    const ai = val(settled[settled.length - (onlyAi ? 1 : 2)]);
+    const wik = onlyAi ? [] : val(settled[2]);
+    // rebuild: course/dict first, then fresh AI, Wiktionary, corpus —
+    // keep old batches that were NOT refreshed this round (✨ only regenerates AI)
+    const keep = (res.examples || []).filter(x =>
+      x.src !== "ai" && (onlyAi || (x.src !== "tatoeba" && x.src !== "wikt" && x.src !== "mini")));
     const first = keep.filter(x => x.src === "course" || x.src === "dict");
     const rest = keep.filter(x => x.src !== "course" && x.src !== "dict");
     const seen = new Set([...first, ...rest].map(k => k.de));
-    const addT = tato.filter(x => !seen.has(x.de) && seen.add(x.de));
     const addA = ai.filter(x => !seen.has(x.de) && seen.add(x.de));
-    const examples = [...first.slice(0, 4), ...addA, ...addT, ...rest].slice(0, 10);
+    const addW = wik.filter(x => !seen.has(x.de) && seen.add(x.de));
+    const addT = tato.filter(x => !seen.has(x.de) && seen.add(x.de));
+    let examples = [...first.slice(0, 4), ...addA, ...addW, ...addT, ...rest].slice(0, 10);
+    let miniFallback = false;
+    if (!examples.length) {              // the whole internet said no — the built-in writer takes over
+      examples = miniWriter(term, res.en || res.query);
+      miniFallback = examples.length > 0;
+    }
     return {
       ...res,
       examples,
       sources: { ...(res.sources || {}),
         ai: examples.some(x => x.src === "ai"),
-        tatoeba: examples.some(x => x.src === "tatoeba") },
+        tatoeba: examples.some(x => x.src === "tatoeba"),
+        wikt: examples.some(x => x.src === "wikt"),
+        mini: examples.some(x => x.src === "mini") },
       idx: 0,
       fresh: (addA.length > 0) || undefined,
+      miniFallback: (miniFallback && onlyAi) || undefined,
       examplesPending: false
     };
   }

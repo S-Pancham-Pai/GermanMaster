@@ -2,6 +2,10 @@
 const $ = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 
+/* app version — shown on the You tab so you always know which build you run */
+const GM_VERSION = "3.5.0";
+const GM_BUILD = "2026-08-12";
+
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {

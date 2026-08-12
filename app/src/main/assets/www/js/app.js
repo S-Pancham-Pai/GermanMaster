@@ -214,7 +214,11 @@ const App = {
             if (ex.length) {
               msg += ex.some(x => x.src === "ai")
                 ? " · 💬 examples ready — ✨ writes new ones anytime"
-                : " · 💬 examples ready — tap ✨ for AI-written ones";
+                : ex.some(x => x.src === "wikt")
+                  ? " · 💬 real dictionary examples ready — ✨ adds AI ones too"
+                  : ex.every(x => x.src === "mini")
+                    ? " · 💬 built-in practice lines ready — ✨ retries the AI writer"
+                    : " · 💬 examples ready — tap ✨ for AI-written ones";
             } else {
               msg += " · sources unreachable — open 💬 and tap ✨ to retry";
             }
@@ -267,7 +271,7 @@ const App = {
             ${online ? `<button class="ico fresh" data-act="freshEx" aria-label="Write fresh examples with AI">${icon("sparkle")}</button>` : ""}
           </div>
           <div class="sentence-en">No stored sentence for “${esc(r.query)}” yet${online ? " — tap the ✨ above and the AI writes new ones just for you" : " — the course examples grow as you pass stages"}.</div>
-          ${r.sources ? `<div class="sheet-via">sources online: Google ${r.sources.google ? "✓" : "✗"} · Tatoeba ${r.sources.tatoeba ? "✓" : "✗"} · AI writer ${r.sources.ai ? "✓" : "✗"} · texts ${r.sources.mm ? "✓" : "✗"}</div>` : ""}`;
+          ${r.sources ? `<div class="sheet-via">sources online: Google ${r.sources.google ? "✓" : "✗"} · Wiktionary ${r.sources.wikt ? "✓" : "✗"} · Tatoeba ${r.sources.tatoeba ? "✓" : "✗"} · AI writer ${r.sources.ai ? "✓" : "✗"} · texts ${r.sources.mm ? "✓" : "✗"}</div>` : ""}`;
         sheet.classList.add("show");
       } else { sheet.classList.remove("show"); sheet.innerHTML = ""; }
       return;
@@ -287,7 +291,7 @@ const App = {
       <div class="sentence-en">${esc(ex.en)}</div>
       <div class="sheet-foot">
         <button class="ghost" data-act="spkEx">${icon("speaker")} Listen</button>
-        <span class="sheet-via">${({ course: "from your course", dict: "from the pocket dictionary", tatoeba: "real sentence · Tatoeba", ai: "✨ AI-written · fresh for you", mm: "from real translated texts" })[ex.src] || (r.via === "course" ? "from your course" : r.via === "dict" ? "pocket dictionary" : "from the web")}</span>
+        <span class="sheet-via">${({ course: "from your course", dict: "from the pocket dictionary", tatoeba: "real sentence · Tatoeba", ai: "✨ AI-written · fresh for you", mm: "from real translated texts", wikt: "real dictionary example · Wiktionary", mini: "✏️ built-in writer · practice line" })[ex.src] || (r.via === "course" ? "from your course" : r.via === "dict" ? "pocket dictionary" : "from the web")}</span>
       </div>`;
     if (this.exp.showSentence) sheet.classList.add("show");
   },
@@ -522,7 +526,9 @@ const App = {
           this.exp.exIdx = 0;
           this.exp.status = nr && nr.fresh
             ? `✨ ${nr.examples.filter(x => x.src === "ai").length} fresh AI examples — every tap writes new ones`
-            : "✨ AI writer unreachable from this network — please try again in a moment.";
+            : nr && nr.miniFallback
+              ? "✏️ AI writer is blocked on this network — built-in practice lines added instead. Tap ✨ again later to retry the AI."
+              : "✨ AI writer unreachable from this network — please try again in a moment.";
           const st2 = $("#expStatus");
           if (st2) st2.textContent = this.exp.status;
           this.renderSheet();

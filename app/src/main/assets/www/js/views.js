@@ -502,7 +502,8 @@ const Views = {
             <span class="set-trail">Reset</span></button>
         </div>
       </div>
-      <div class="today-note center">GermanMaster · every stage, every card, every review is on your device.</div>`;
+      <div class="today-note center">GermanMaster · every stage, every card, every review is on your device.</div>
+      <div class="ver-stamp">v${GM_VERSION} · ${GM_BUILD}</div>`;
   }
 };
 

@@ -90,10 +90,12 @@ const step = (n, ok) => log.push((ok ? 'PASS' : 'FAIL') + ' ' + n);
   click($('[data-act="goEn"]'));
   await wait(1600);
   step('translation still immediate', /U-Boot/.test($('#deBox').value));
-  step('loading hint or instant honest failure', /getting example sentences|sources unreachable/.test($('#expStatus').textContent));
+  step('loading hint or instant honest outcome', /getting example sentences|💬|sources unreachable/.test($('#expStatus').textContent));
   await wait(3500);
-  step('honest unreachable message (not stuck)', /ources unreachable/.test($('#expStatus').textContent));
-  step('no examples silently invented', (w.App.exp.result.examples || []).length === 0);
+  // v3.5: total network failure no longer yields an empty sheet — the built-in
+  // writer guarantees practice lines, honestly labeled; never stuck on a spinner
+  step('built-in practice lines announced (not stuck)', /built-in practice lines ready|unreachable/.test($('#expStatus').textContent));
+  step('fallback lines honestly labeled, never faked sources', (w.App.exp.result.examples || []).length > 0 && w.App.exp.result.examples.every(x => x.src === 'mini'));
 
   click($('[data-act="nextEx"]')); await wait(40); // must not crash with 0 examples
   const before = $('#expStatus').textContent;
