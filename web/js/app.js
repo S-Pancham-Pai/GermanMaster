@@ -5,7 +5,7 @@ const App = {
   openUnit: null,
   preview: "",
   typeTimer: null,
-  exp: { en: "", de: "", result: null, exIdx: 0, showSentence: false, status: "", sugs: [] },
+  exp: { en: "", de: "", result: null, exIdx: 0, showSentence: false, status: "", sugs: [], alts: [] },
   reqToken: 0,
 
   init() {
@@ -161,6 +161,7 @@ const App = {
     this.exp.en = en.value;
     this.exp.de = de.value;
     this.exp.sugs = r.suggestions || [];
+    this.exp.alts = (r.alts || []).slice(0, 3);
     const missing = !r || r.via === "error" || r.via === "noresult";
     if (missing) {
       // clear the stale pane so the user never sees an old answer and thinks it's the new one
@@ -180,7 +181,9 @@ const App = {
         this.exp.status = r.via === "course" ? "From your course — instant"
           : r.via === "dict" ? "Pocket dictionary — works offline"
           : r.via === "gloss" ? "Word-by-word (offline) — internet gives the full sentence"
-          : (r.cached ? "From memory — instant" : "Live translation");
+          : (r.cached ? "From memory — instant"
+            : r.sources && r.sources.google ? "Google Translate"
+            : r.sources && r.sources.mm ? "Live translation (MyMemory)" : "Live translation");
       } else this.exp.status = "";
       if (r.examples && r.examples.length) {
         $("#quoteBtn").classList.add("show");
@@ -192,8 +195,19 @@ const App = {
     }
     if (st) st.textContent = this.exp.status;
     this.renderSugs();
+    this.renderAlts();
     this.renderSheet();
     tools();
+  },
+
+  renderAlts() {
+    let row = $("#altRow");
+    if (!row) return;
+    const alts = this.exp.alts || [];
+    if (!alts.length) { row.innerHTML = ""; row.classList.remove("show"); return; }
+    row.innerHTML = `<span class="sug-label">also:</span>` + alts.map(a =>
+      `<button class="sug-chip alt" data-act="alt" data-v="${escAttr(a)}">${esc(a)}</button>`).join("");
+    row.classList.add("show");
   },
 
   renderSugs() {
@@ -215,7 +229,8 @@ const App = {
       if (this.exp.showSentence) {
         sheet.innerHTML = `
           <div class="sheet-top"><h3>In a real sentence</h3></div>
-          <div class="sentence-en">No real-life sentence found for “${esc(r.query)}” yet — the course examples grow as you pass stages.</div>`;
+          <div class="sentence-en">No real-life sentence found for “${esc(r.query)}” yet — the course examples grow as you pass stages.</div>
+          ${r.sources ? `<div class="sheet-via">sources online: Google ${r.sources.google ? "✓" : "✗"} · Tatoeba ${r.sources.tatoeba ? "✓" : "✗"} · AI writer ${r.sources.ai ? "✓" : "✗"} · texts ${r.sources.mm ? "✓" : "✗"}</div>` : ""}`;
         sheet.classList.add("show");
       } else { sheet.classList.remove("show"); sheet.innerHTML = ""; }
       return;
@@ -429,6 +444,12 @@ const App = {
       case "clrDe": { const b = $("#deBox"); b.value = ""; this.exp.de = ""; this.focusBox("de"); break; }
       case "spkEn": Voice.speak($("#enBox").value, { lang: "en" }); break;
       case "spkDe": Voice.speak($("#deBox").value, { lang: "de" }); break;
+      case "alt": {
+        const v = d.v || "";
+        const box = $("#deBox");
+        if (box) { box.value = v; this.exp.de = v; autoSize(box); }
+        break;
+      }
       case "sug": {
         const word = d.de || "";
         const box = $("#deBox");
@@ -459,7 +480,7 @@ const App = {
         if (confirm("Reset all progress and memory? This can't be undone.")) {
           Store.reset();
           views_story_reset();
-          this.openLevel = "A1"; this.openUnit = null; Views.story = null; this.exp = { en: "", de: "", result: null, exIdx: 0, showSentence: false, status: "", sugs: [] };
+          this.openLevel = "A1"; this.openUnit = null; Views.story = null; this.exp = { en: "", de: "", result: null, exIdx: 0, showSentence: false, status: "", sugs: [], alts: [] };
           this.render();
         }
         break;

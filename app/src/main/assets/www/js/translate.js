@@ -139,22 +139,52 @@ const Translate = (() => {
     } finally { clearTimeout(t); }
   }
 
-  /* Google Translate's own endpoint — the same engine Google Search uses */
+  /* Google Translate's own endpoint — the same engine Google Search uses.
+     Returns { text, alts[] } — alts are the other dictionary translations. */
   async function googleTranslate(q, fromDe) {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${fromDe ? "de" : "en"}&tl=${fromDe ? "en" : "de"}&dt=t&q=${encodeURIComponent(q)}`;
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${fromDe ? "de" : "en"}&tl=${fromDe ? "en" : "de"}&dt=t&dt=bd&q=${encodeURIComponent(q)}`;
     const json = await fetchJSON(url, 6000);
     const parts = json && Array.isArray(json[0]) ? json[0].map(seg => seg && seg[0]).filter(Boolean) : [];
-    const out = String(parts.join(" ")).replace(/\s+/g, " ").trim();
-    if (!out || normalize(out) === normalize(q)) throw new Error("gtx-echo");
-    return out;
+    const text = String(parts.join(" ")).replace(/\s+/g, " ").trim();
+    if (!text || normalize(text) === normalize(q)) throw new Error("gtx-echo");
+    const alts = [];
+    try {
+      for (const block of (json[1] || [])) {           // [pos, [t1, t2, ...], ...]
+        for (const alt of (block && block[1] || [])) {
+          const w = String(alt || "").trim();
+          if (w && w.length < 60 && normalize(w) !== normalize(text) && !alts.includes(w)) alts.push(w);
+          if (alts.length >= 3) break;
+        }
+        if (alts.length >= 3) break;
+      }
+    } catch (_) { /* alternatives optional */ }
+    return { text, alts };
   }
 
-  /* AI-written practice sentences (like Google's AI mode, but tuned for A1/A2 German) */
+  /* AI-written practice sentences (like Google's AI mode, tuned for A1/A2 German).
+     GET first; if the network/CORS blocks it, try the POST chat shape. */
   async function aiExamples(deTerm, enHint) {
     const w = stripArticle(deTerm || "").trim();
     if (!w || w.length > 32) return [];
     const prompt = `Write 3 different short, natural German sentences (CEFR A1-A2, everyday conversational style, one sentence could be a question) using the German word "${w}"${enHint ? ` (it means: "${String(enHint).slice(0, 40)}")` : ""}. Each sentence must actually contain the word "${w}". Add an English translation for each. Reply with ONLY the lines, exactly in this format, nothing else:\nGerman sentence => English translation`;
-    const txt = await fetchText("https://text.pollinations.ai/" + encodeURIComponent(prompt), 9000);
+    let txt = "";
+    try {
+      txt = await fetchText("https://text.pollinations.ai/" + encodeURIComponent(prompt), 9000);
+    } catch (_) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 9000);
+      try {
+        const res = await fetch("https://text.pollinations.ai/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: [{ role: "user", content: prompt }] }),
+          signal: ctrl.signal
+        });
+        if (res.ok) txt = await res.text();
+      } catch (_) { /* both shapes failed */ }
+      finally { clearTimeout(t); }
+    }
+    if (!txt) throw new Error("ai-unavailable");
     const out = [];
     const rx = new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
     for (const line of String(txt).split(/\n+/)) {
@@ -276,8 +306,9 @@ const Translate = (() => {
 
     // 1) translation: Google Translate + MyMemory race in parallel — first good one wins
     const [gtR, mmR] = await Promise.allSettled([googleTranslate(q, fromDe), myMemoryTranslate(q, fromDe)]);
-    let translated = "";
-    if (gtR.status === "fulfilled") translated = gtR.value;
+    let translated = "", alts = [];
+    const srcs = { google: gtR.status === "fulfilled", mm: mmR.status === "fulfilled", tatoeba: false, ai: false };
+    if (gtR.status === "fulfilled") { translated = gtR.value.text; alts = gtR.value.alts || []; }
     else if (mmR.status === "fulfilled") translated = mmR.value.translated;
     if (!local) {
       if (translated) { de = fromDe ? q : translated; en = fromDe ? translated : q; }
@@ -290,11 +321,12 @@ const Translate = (() => {
 
     // 2) sentences need the GERMAN term — search corpora + AI writer in parallel
     const term = stripArticle(fromDe ? q : (de || q));
-    const needAi = examples.length + (local && local.exampleDe ? 1 : 0) < 3; /* seeded course/dict example already counted above */
+    const needAi = examples.length < 3; // keep the sheet stocked even when the corpus is thin
     const [tatoR, aiR] = await Promise.allSettled([
       tatoebaExamples(term),
       needAi ? aiExamples(term, en || q) : Promise.resolve([])
     ]);
+    if (tatoR.status === "fulfilled") srcs.tatoeba = tatoR.value.length > 0;
     if (tatoR.status === "fulfilled" && tatoR.value.length) {
       const tato = tatoR.value.map(x => ({ ...x, src: "tatoeba" }));
       // natural corpus sentences first, right after the course example
@@ -302,6 +334,7 @@ const Translate = (() => {
       const rest = examples.filter(x => x.src !== "course");
       examples = [...course, ...tato, ...rest.filter(x => !tato.some(t => t.de === x.de))];
     }
+    if (aiR.status === "fulfilled") srcs.ai = aiR.value.length > 0;
     if (aiR.status === "fulfilled" && aiR.value.length) {
       const ai = aiR.value.filter(a => !examples.some(e => e.de === a.de));
       const course = examples.filter(x => x.src === "course");
@@ -310,7 +343,10 @@ const Translate = (() => {
       examples = [...course, ...tato, ...ai, ...rest];
     }
 
-    return finish(q, fromDe, de, en, gender, examples, via, false, key);
+    const res = finish(q, fromDe, de, en, gender, examples, via, false, key);
+    res.alts = alts;
+    res.sources = srcs;
+    return res;
   }
 
   function finish(query, fromDe, de, en, gender, examples, via, offline, cacheKey) {

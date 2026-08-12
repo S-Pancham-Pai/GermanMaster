@@ -352,6 +352,7 @@ const Views = {
       </div>
       <div class="exp-status" id="expStatus">${E.status ? esc(E.status) : ""}</div>
       <div class="sug-row ${E.sugs && E.sugs.length ? "show" : ""}" id="sugRow">${E.sugs && E.sugs.length ? `<span class="sug-label">Did you mean:</span>` + E.sugs.slice(0, 4).map(it => `<button class="sug-chip" data-act="sug" data-de="${escAttr(it.de)}">${esc(it.de)}<span>${esc(it.en)}</span></button>`).join("") : ""}</div>
+      <div class="sug-row ${E.alts && E.alts.length ? "show" : ""}" id="altRow">${E.alts && E.alts.length ? `<span class="sug-label">also:</span>` + E.alts.slice(0, 3).map(a => `<button class="sug-chip alt" data-act="alt" data-v="${escAttr(a)}">${esc(a)}</button>`).join("") : ""}</div>
       <div class="sentence-sheet ${E.showSentence && E.result && E.result.examples.length ? "show" : ""}" id="sheet">
         ${E.result ? `
           <div class="sheet-top">
