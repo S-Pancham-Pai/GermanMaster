@@ -1,0 +1,11 @@
+{
+  "name": "germanmaster-web-tests",
+  "private": true,
+  "description": "jsdom harness executing the real web app against stubbed networks. Run: npm ci && npm test",
+  "scripts": {
+    "test": "node run-all.js"
+  },
+  "dependencies": {
+    "jsdom": "^24.1.0"
+  }
+}
